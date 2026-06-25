@@ -29,6 +29,13 @@
       <default>1000</default>
     </input>
 
+    <input type="dropdown" token="model_scope" searchWhenChanged="true">
+      <label>Reduction model</label>
+      <choice value="all">Keep all datamodel fields</choice>
+      <choice value="recommended">Keep recommended/model fields only</choice>
+      <default>recommended</default>
+    </input>
+
   </fieldset>
 
   <search id="base_structure">
@@ -102,7 +109,7 @@ $base_search$
     <query><![CDATA[
 $base_search$
 | head $sample_limit$
-| fieldsummary maxvals=1 disable_derived_fields=true
+| fieldsummary maxvals=0
 | rename field as field_name count as stream_field_count
 | eval field_name=lower(trim(field_name))
 | where NOT match(field_name,"^_")
@@ -276,9 +283,9 @@ $base_search$
 | stats avg(structure_score) as Structure avg(consistency_score) as Consistency
 | eval Structure=round(Structure,0), Consistency=round(Consistency,0)
 | appendcols [
-    $base_search$
+    search $base_search$
     | head $sample_limit$
-    | fieldsummary maxvals=1 disable_derived_fields=true
+    | fieldsummary maxvals=1
     | rename field as field_name
     | eval field_name=lower(trim(field_name))
     | where NOT match(field_name,"^_")
@@ -535,18 +542,42 @@ $base_search$
       </input>
 
       <chart>
-        <search base="base_field_reduction">
+        <search>
           <query><![CDATA[
-| where in_datamodel=1
-| where "$field_scope$"="all" OR model_field=1
-| eval datamodels=if(isnull(datamodels),"__none__",datamodels)
-| mvexpand datamodels
-| rename datamodels as datamodel
-| eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-| eval selected_dm_wrapped="|" . selected_dm . "|"
-| eval datamodel_norm=replace(datamodel," ","_")
-| where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%") OR like(selected_dm_wrapped,"%|" . datamodel_norm . "|%")
-| stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags by datamodel
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eventstats values(tag) as scope_observed_tags
+| fields scope_observed_tags *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
+| untable scope_observed_tags field_name field_value
+| where isnotnull(field_value)
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="scope_observed_tags"
+| stats count as field_instances values(scope_observed_tags) as observed_tags by field_name
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | fields datamodel field_name scope_field
+]
+| stats
+    dc(field_name) as matched_scope_fields
+    values(observed_tags) as observed_tags
+    by datamodel
 | join type=left max=0 datamodel [
     | inputlookup datamodel_fields_lookup
     | eval datamodel=trim(datamodel)
@@ -593,6 +624,8 @@ $base_search$
 | table datamodel "Current Alignment %" "Potential Alignment %"
 | sort - "Current Alignment %" - "Potential Alignment %" datamodel
           ]]></query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
 
         <option name="charting.chart">column</option>
@@ -707,13 +740,6 @@ $base_search$
           </details>
         </div>
       </html>
-
-      <input type="dropdown" token="model_scope" searchWhenChanged="true">
-        <label>Reduction model</label>
-        <choice value="all">Keep all datamodel fields</choice>
-        <choice value="recommended">Keep recommended/model fields only</choice>
-        <default>recommended</default>
-      </input>
 
       
     </panel>
