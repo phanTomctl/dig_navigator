@@ -1,0 +1,16 @@
+<nav search_view="search">
+  <view name="data_intelligence" label="Data Intelligence" />
+  <view name="data_governance" label="Data Governance"/>
+
+  <collection label="DIG IN">
+    <view name="data_structure_center" label="Structure IN" />
+    <view name="datamodel_center" label="Readiness IN" />
+    <view name="governance_center" label="Governance IN" />
+    <view name="data_quality_center" label="Quality IN" />
+    <view name="telemetry_timeliness_center" label="Delivery IN" />
+  </collection>
+
+  <view name="configuration" label="Configuration" />
+  <view name="search" label="Search" />
+  <view name="about_dig" label="About DIG" />  
+</nav>

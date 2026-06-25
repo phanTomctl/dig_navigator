@@ -1,0 +1,89 @@
+<dashboard version="1.1" script="dig_config.js" stylesheet="devnull.css">
+  <label>Configuration</label>
+
+  <row>
+    <panel>
+      <html>
+        <div class="devnull-hero">
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
+          <div>
+            <div class="devnull-title">Configuration</div>
+            <div class="devnull-subtitle">
+              Build and validate CIM/datamodel, tag, and governance mapping data used by the app.
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+      
+        <button id="run_scrape_btn" class="btn btn-primary">
+          Refresh CIM Field Metadata
+        </button>
+        <span id="scrape_status" style="margin-left: 12px;"></span>
+
+        <button id="build_tags_btn" class="btn btn-primary">
+          Build Curated CIM Tag Mapping
+        </button>
+
+        <span id="tag_status" style="margin-left: 12px;"></span>
+
+        <button id="run_all_btn" class="btn btn-primary">
+          Refresh DIG Configuration
+        </button>
+
+        <span id="run_all_status" style="margin-left: 12px;"></span>
+
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Datamodel Fields Lookup Preview</title>
+      <table>
+        <search>
+          <query>
+            | inputlookup datamodel_fields_lookup
+            | table datamodel field_name notes recommended source_url updated_at
+          </query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>CIM Datamodel Tags Lookup Preview</title>
+      <table>
+        <search>
+          <query><![CDATA[
+| inputlookup cim_datamodel_tags_lookup
+| stats values(expected_tag) as expected_tags count by datamodel
+| sort datamodel
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Governance Mapping Lookup Preview</title>
+      <table>
+        <search>
+          <query><![CDATA[
+| inputlookup governance_datamodel_mapping_lookup
+| table framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance tiering_recommendation review_status updated_at
+| sort framework datamodel requirement_area
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+</dashboard>

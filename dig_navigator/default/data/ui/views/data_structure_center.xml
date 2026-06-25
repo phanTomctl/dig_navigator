@@ -1,0 +1,338 @@
+<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+  <label>Data Structure IN</label>
+
+  <fieldset submitButton="false" autoRun="false">
+    <input type="text" token="base_search">
+      <label>Analysis Scope</label>
+      <default>index=somerandomindex sourcetype=mysourcetype</default>
+    </input>
+
+    <input type="time" token="time_range">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+
+    <input type="dropdown" token="group_by" searchWhenChanged="true">
+      <label>Group results by</label>
+      <choice value="sourcetype">Sourcetype</choice>
+      <choice value="source">Source</choice>
+      <default>sourcetype</default>
+    </input>
+
+    <input type="multiselect" token="selected_group" searchWhenChanged="true">
+      <label>Selected Data Source</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <fieldForLabel>group_value</fieldForLabel>
+      <fieldForValue>group_value</fieldForValue>
+      <search>
+        <query><![CDATA[
+$base_search$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| stats count by group_value
+| sort group_value
+        ]]></query>
+        <earliest>$time_range.earliest$</earliest>
+        <latest>$time_range.latest$</latest>
+      </search>
+      <delimiter>|</delimiter>
+    </input>
+
+    <input type="dropdown" token="classification" searchWhenChanged="true">
+      <label>Classification</label>
+      <choice value="*">All</choice>
+      <choice value="Structured">Structured</choice>
+      <choice value="Semi-Structured">Semi-Structured</choice>
+      <choice value="Unstructured">Unstructured</choice>
+      <choice value="Inconsistent">Inconsistent</choice>
+      <default>*</default>
+    </input>
+  
+
+    <input type="text" token="sample_limit">
+      <label>Sample event limit</label>
+      <default>5000</default>
+    </input>
+
+  </fieldset>
+
+  <search id="base_structure_center">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
+| eval selected_group_wrapped="|" . selected_group . "|"
+| where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+| eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
+| eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
+| spath
+| eval schema_fields=null()
+| foreach * [
+    eval schema_fields=if(
+        is_json=1
+        AND isnotnull('<<FIELD>>')
+        AND NOT match("<<FIELD>>","^_")
+        AND NOT match("<<FIELD>>","^(index|source|sourcetype|host|splunk_server|splunk_server_group|linecount|punct|tag|eventtype|group_value|selected_group|selected_group_wrapped|is_json|is_xml|schema_fields)$"),
+        mvappend(schema_fields, lower("<<FIELD>>")),
+        schema_fields
+    )
+]
+| eval json_schema=if(is_json=1,mvjoin(mvsort(mvdedup(schema_fields)),"|"),null())
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_pairs>[A-Za-z0-9][A-Za-z0-9_]{0,100}\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s]+))"
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_keys>[A-Za-z0-9][A-Za-z0-9_]{0,100})\s*="
+| eval kv_count=mvcount(kv_pairs)
+| eval is_kv=if(kv_count>=3,1,0)
+| rex max_match=0 field=_raw "<\/?(?<xml_tags>[A-Za-z_][A-Za-z0-9_.:-]*)[\s>/]"
+| eval is_common_log=if(match(_raw,"^\S+\s+\S+\s+\S+\s+\[[^\]]+\]\s+\"[^\"]*\"\s+\d{3}\s+\S+"),1,0)
+| eval has_delimiter=if(match(_raw,"[,|;\t]") OR is_common_log=1,1,0)
+| eval is_delimited=if(is_json=0 AND is_xml=0 AND is_kv=0 AND has_delimiter=1,1,0)
+| eval delimiter_type=case(
+    is_common_log=1,"common_log",
+    match(_raw,"\|"),"pipe",
+    match(_raw,","),"comma",
+    match(_raw,";"),"semicolon",
+    match(_raw,"\t"),"tab",
+    true(),"none"
+)
+| eval delimiter_field_count=case(
+    delimiter_type="pipe",mvcount(split(_raw,"|")),
+    delimiter_type="comma",mvcount(split(_raw,",")),
+    delimiter_type="semicolon",mvcount(split(_raw,";")),
+    delimiter_type="tab",mvcount(split(_raw,"\t")),
+    delimiter_type="common_log",9,
+    true(),0
+)
+| eval signal_count=is_json+is_xml+is_kv+is_delimited
+| eval primary_structure=case(
+    is_json=1, "JSON",
+    is_xml=1, "XML",
+    is_kv=1, "Key-Value",
+    is_delimited=1, "Delimited",
+    true(), "Free-form"
+)
+| eval raw_len=len(_raw)
+| eval fallback_shape=replace(_raw,"\b\d{1,3}(\.\d{1,3}){3}\b","IP")
+| eval fallback_shape=replace(fallback_shape,"\b([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]*\b","IP")
+| eval fallback_shape=replace(fallback_shape,"[A-Fa-f0-9]{8,}","HEX")
+| eval fallback_shape=replace(fallback_shape,"\d+","N")
+| eval fallback_shape=trim(replace(fallback_shape,"\s+"," "))
+| eval raw_shape=case(
+    is_json=1 AND isnotnull(json_schema) AND len(json_schema)>0,"json_schema:" . json_schema,
+    is_xml=1 AND mvcount(xml_tags)>0,"xml_schema:" . mvjoin(mvsort(mvdedup(xml_tags)),"|"),
+    is_kv=1 AND mvcount(kv_keys)>0,"kv_keys:" . mvjoin(mvsort(mvdedup(kv_keys)),"|"),
+    is_delimited=1,"delimited:" . delimiter_type . ":fields=" . delimiter_field_count,
+    true(),"freeform_shape:" . fallback_shape
+)
+| eval raw_shape_id=substr(md5(raw_shape),1,8)
+| eval structure_hint=if(is_json=1 OR is_xml=1 OR is_kv=1 OR is_delimited=1,1,0)
+| eventstats
+    count as event_count
+    avg(structure_hint) as structure_ratio
+    dc(raw_shape) as distinct_shapes
+    avg(raw_len) as avg_raw_len
+    stdev(raw_len) as stdev_raw_len
+    by group_value
+| eval shape_ratio=if(event_count>0,round(distinct_shapes/event_count,4),0)
+| eval length_variance=if(avg_raw_len>0,round(stdev_raw_len/avg_raw_len,4),0)
+| eval Classification=case(
+    structure_ratio < 0.20, "Unstructured",
+    structure_ratio >= 0.85 AND shape_ratio <= 0.30, "Structured",
+    structure_ratio >= 0.40 AND shape_ratio <= 0.70, "Semi-Structured",
+    structure_ratio >= 0.40 AND shape_ratio > 0.70, "Inconsistent",
+    true(), "Unstructured"
+)
+| eval Classification_Confidence=case(
+    event_count < 50, "Low sample size",
+    event_count < 250, "Moderate sample size",
+    true(), "Higher sample size"
+)
+| eval selected_class=if(len("$classification$")=0,"*","$classification$")
+| where selected_class="*" OR Classification=selected_class
+| eval raw_preview=if(raw_len>1000, substr(_raw,1,1000) . " ... [TRUNCATED: original raw length " . raw_len . " chars]", _raw)
+| eval raw_truncated=if(raw_len>1000,"yes","no")
+| fields _time group_value Classification Classification_Confidence event_count structure_ratio shape_ratio length_variance distinct_shapes primary_structure signal_count raw_shape raw_shape_id raw_len raw_truncated raw_preview structure_hint is_json is_xml is_kv is_delimited _raw
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <row>
+    <panel>
+      <html>
+        <div class="devnull-hero">
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
+          <div>
+            <div class="devnull-title">Data Structure Information Nexus</div>
+            <div class="devnull-subtitle">
+              Information Nexus for investigating structure classifications, event consistency, telemetry shape characteristics and representative evidence samples.
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Detected Structure Type Distribution</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> The detected structure type assigned to each sampled event. This is separate from the broader Classification filter. Each event is counted once only, so JSON is not also counted as delimited simply because it contains commas.</p>
+              <p><strong>How to use it:</strong> Use this first to understand the observed event format, such as JSON, XML, Key-Value, Delimited, or Free-form, before reviewing consistency, shape variation, or raw examples.</p>
+              <p><strong>Read it as:</strong> Detected Structure Type explains the event format. Classification explains the source consistency: Structured, Semi-Structured, Unstructured, or Inconsistent.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_structure_center">
+          <query><![CDATA[
+| stats count as events by group_value primary_structure
+| eventstats sum(events) as total_events by group_value
+| eval structure_pct=round((events/total_events)*100,2)
+| rename group_value as "Data Source"
+| chart sum(structure_pct) over "Data Source" by primary_structure
+          ]]></query>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleX.text">Selected Data Source</option>
+        <option name="charting.axisTitleY.text">Percent of sampled events by detected structure type</option>
+        <option name="charting.seriesColors">[#7dff9a,#00e5ff,#ffc857,#ff4fd8,#9fb5ac,#ff6b6b]</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Classification Evidence</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> The metrics behind the broad structure Classification for the selected Data Source. This is separate from Detected Structure Type, which describes the event format.</p>
+              <p><strong>How to use it:</strong> Review event count, structure ratio, shape ratio, length variance, and detected structure types before deciding whether the data is easy to normalise or needs onboarding work.</p>
+              <p><strong>Read it as:</strong> High structure ratio and low shape ratio usually means consistent, predictable data. High shape or length variance indicates mixed or inconsistent formats.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_structure_center">
+          <query><![CDATA[
+| stats
+    count as sampled_events
+    max(event_count) as total_events_in_group
+    values(Classification) as Classification
+    values(Classification_Confidence) as Classification_Confidence
+    values(primary_structure) as detected_structure_types_seen
+    max(structure_ratio) as structure_ratio
+    max(shape_ratio) as shape_ratio
+    max(length_variance) as length_variance
+    max(distinct_shapes) as distinct_shapes
+    avg(raw_len) as avg_raw_len
+    by group_value
+| eval structure_ratio=round(structure_ratio,4)
+| eval shape_ratio=round(shape_ratio,4)
+| eval length_variance=round(length_variance,4)
+| eval avg_raw_len=round(avg_raw_len,2)
+| rename group_value as "Data Source"
+| rename detected_structure_types_seen as "Detected Structure Types Seen"
+| table "Data Source" Classification Classification_Confidence "Detected Structure Types Seen" total_events_in_group sampled_events structure_ratio shape_ratio length_variance distinct_shapes avg_raw_len
+| sort "Data Source"
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Event Shape Distribution</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> The most common event shapes after variable values such as numbers, IPs, and hashes are normalised.</p>
+              <p><strong>How to use it:</strong> Use this to see whether the source is mostly one repeatable format or many competing formats.</p>
+              <p><strong>Read it as:</strong> A small number of dominant shapes suggests consistency. Many small shapes suggests variation or mixed event types.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_structure_center">
+          <query><![CDATA[
+| stats
+    count as shape_count
+    max(event_count) as total_events_in_group
+    values(Classification) as Classification
+    values(Classification_Confidence) as Classification_Confidence
+    values(primary_structure) as detected_structure_types
+    values(raw_preview) as sample_events
+    max(raw_len) as max_raw_len
+    by group_value raw_shape_id raw_shape
+| eval shape_pct=if(total_events_in_group>0,round((shape_count/total_events_in_group)*100,2),0)
+| eval sample_raw=mvindex(sample_events,0)
+| rename group_value as "Data Source"
+| rename raw_shape_id as "Shape ID"
+| rename shape_count as "Shape Events"
+| rename shape_pct as "Shape %"
+| rename max_raw_len as "Max Raw Length"
+| rename detected_structure_types as "Detected Structure Type"
+| rename sample_raw as "Representative Raw Event Preview"
+| table "Data Source" Classification "Detected Structure Type" "Shape Events" "Shape %" "Max Raw Length" "Representative Raw Event Preview"
+| sort "Data Source" - "Shape Events"
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Representative Raw Events</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Example raw events for each detected event shape.</p>
+              <p><strong>How to use it:</strong> Compare events with the same shape ID to confirm whether they are genuinely consistent or whether one event is masking multiple embedded records.</p>
+              <p><strong>Read it as:</strong> Raw events over 1,000 characters are previewed and marked as truncated so very large multiline or bundled events do not dominate the page.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_structure_center">
+          <query><![CDATA[
+| sort 0 group_value raw_shape_id _time
+| streamstats count as sample_no by group_value raw_shape_id
+| where sample_no<=3
+| rename group_value as "Data Source"
+| rename raw_shape_id as "Shape ID"
+| rename primary_structure as "Detected Structure Type"
+| rename raw_preview as "Raw Event Preview"
+| rename raw_truncated as "Raw Truncated"
+| rename raw_len as "Raw Length"
+| table _time "Data Source" Classification "Detected Structure Type" "Raw Length" "Raw Truncated" "Raw Event Preview"
+| sort "Data Source" "Shape ID" _time
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+</dashboard>

@@ -1,0 +1,406 @@
+body,
+.dashboard-body {
+    background: #050807 !important;
+    color: #e8f5ef !important;
+}
+
+.dashboard-body,
+.dashboard-row,
+.dashboard-cell {
+    background: #050807 !important;
+}
+
+.dashboard-panel,
+.dashboard-cell .dashboard-panel,
+.panel,
+.panel-default,
+.panel-body {
+    background: #0b1210 !important;
+    border: 1px solid #1f3b32 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 22px rgba(125,255,154,0.10) !important;
+}
+
+.panel-head,
+.dashboard-panel .panel-head {
+    background: #07100d !important;
+    border-bottom: 1px solid #1f3b32 !important;
+}
+
+.panel-title,
+.dashboard-header h1 {
+    color: #7dff9a !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+}
+
+.dashboard-header h1 {
+    letter-spacing: 0.08em;
+}
+
+/* Tables */
+.splunk-table,
+.table,
+.results-table,
+.shared-reportvisualizer,
+.shared-results-table {
+    background: #0b1210 !important;
+}
+
+.table th,
+.results-table th {
+    background: #10251d !important;
+    color: #7dff9a !important;
+    text-transform: uppercase;
+}
+
+.table td,
+.results-table td {
+    border-color: #1f3b32 !important;
+}
+
+/* Buttons */
+.btn,
+.btn-primary {
+    background: #7dff9a !important;
+    border-color: #7dff9a !important;
+    color: #04110a !important;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+/* Hero banner */
+.devnull-hero {
+    background: linear-gradient(135deg, #050807 0%, #0b1913 65%, #123d2b 100%);
+    border: 1px solid #1f3b32;
+    border-radius: 14px;
+    padding: 14px 18px;
+    min-height: 60px;
+    margin-bottom: 14px;
+    box-shadow: 0 0 24px rgba(125, 255, 154, 0.14);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.devnull-logo,
+.devnull-hero img.devnull-logo,
+.devnull-hero img[src*="devnull-logo"] {
+    width: 29.4px !important;
+    height: 34px !important;
+    max-width: 29.4px !important;
+    max-height: 34px !important;
+    min-width: 29.4px !important;
+    min-height: 34px !important;
+    display: block !important;
+    flex: 0 0 29.4px !important;
+    object-fit: contain !important;
+    overflow: hidden !important;
+    filter: drop-shadow(0 0 6px rgba(125,255,154,0.35));
+}
+
+.devnull-title {
+    color: #7dff9a;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+}
+
+.devnull-subtitle {
+    color: #c5d8cf;
+    font-size: 14px;
+    margin-top: 4px;
+}
+
+.panel-subtitle {
+    color: #9fb5ac;
+    font-size: 12px;
+    margin-top: -6px;
+    margin-bottom: 12px;
+    line-height: 1.4;
+    opacity: 0.9;
+}
+
+/* Context / interpretation pop-out panels */
+.context-toggle details[open] summary {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.context-toggle details {
+    background: #10251d;
+    border: 1px solid #2e5f4e;
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 0 14px rgba(125, 255, 154, 0.12);
+}
+
+.context-toggle summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 10px 14px;
+    color: #04110a;
+    background: #7dff9a;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.context-toggle summary::-webkit-details-marker {
+    display: none;
+}
+
+.context-toggle summary::before {
+    content: "ⓘ ";
+    font-weight: 900;
+}
+
+.context-panel {
+    background: #10251d;
+    color: #ffffff;
+    border-left: 4px solid #7dff9a;
+    border-top: none;
+    padding: 16px 18px;
+    border-radius: 0 0 9px 9px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.context-panel h4 {
+    color: #7dff9a;
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.context-panel p,
+.context-panel li,
+.context-panel strong {
+    color: #ffffff;
+}
+
+.context-panel ul {
+    margin: 8px 0 0 18px;
+    padding: 0;
+}
+
+.context-panel li {
+    margin-bottom: 6px;
+}
+
+/* Dashboard input layout only.
+   Actual input controls intentionally use Splunk defaults. */
+
+/* Prevent dashboard fieldsets from inheriting DIG panel styling */
+.dashboard-body .dashboard-form-globalfieldset,
+.dashboard-body .dashboard-form-fieldset,
+.dashboard-body fieldset {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+}
+
+/* Keep filter controls aligned and prevent overlap */
+.dashboard-body .dashboard-form-globalfieldset {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    gap: 10px 16px !important;
+}
+
+/* Default size for normal dashboard controls */
+.dashboard-body .dashboard-form-globalfieldset .input {
+    flex: 0 1 320px !important;
+    max-width: 320px !important;
+    min-width: 220px !important;
+    margin: 0 !important;
+}
+
+/* Search string input gets its own full-width row */
+.dashboard-body .dashboard-form-globalfieldset .input.input-text,
+.dashboard-body .dashboard-form-globalfieldset .input-text {
+    flex: 1 0 100% !important;
+    max-width: none !important;
+    width: 100% !important;
+}
+
+/* Let the Search string control fill the row without changing its colours */
+.dashboard-body .dashboard-form-globalfieldset .input.input-text .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .input-text .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .input.input-text div[data-test="text"],
+.dashboard-body .dashboard-form-globalfieldset .input-text div[data-test="text"] {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+/* Let the native textbox use available width while keeping Splunk default appearance */
+.dashboard-body .dashboard-form-globalfieldset .input.input-text input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .input-text input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .input.input-text input[data-test="textbox"],
+.dashboard-body .dashboard-form-globalfieldset .input-text input[data-test="textbox"] {
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+}
+
+/* Allow wide multiselects to fit within their allocated column instead of spilling */
+.dashboard-body .dashboard-form-globalfieldset .input-multiselect {
+    min-width: 260px !important;
+    max-width: 420px !important;
+}
+
+/* Submit button aligns with controls without forcing other inputs wider */
+.dashboard-body .dashboard-form-globalfieldset .form-submit,
+.dashboard-body .dashboard-form-globalfieldset .dashboard-form-submit,
+.dashboard-body .dashboard-form-globalfieldset .splunk-submit-button {
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+}
+
+/* DIG Analysis Scope toolbar */
+.dig-scope-toolbar {
+    margin: 8px 0 14px 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(125,255,154,0.22);
+    border-radius: 6px;
+    background: rgba(2, 20, 12, 0.72);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.dig-scope-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.dig-scope-toolbar .btn {
+    margin-right: 0;
+}
+
+.dig-scope-status {
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.dig-scope-status.dig-scope-error {
+    color: #ff6b6b;
+    font-weight: 600;
+}
+
+.dig-scope-help {
+    font-size: 12px;
+    opacity: 0.78;
+    line-height: 1.35;
+}
+
+.dig-scope-summary {
+    font-size: 12px;
+    line-height: 1.35;
+    color: #ffffff;
+    opacity: 0.92;
+    word-break: break-word;
+}
+
+.dig-scope-collapsed .dig-scope-actions,
+.dig-scope-collapsed .dig-scope-help {
+    display: none !important;
+}
+
+.dig-scope-collapsed {
+    margin-top: 4px;
+    margin-bottom: 10px;
+}
+
+/* Analysis Scope should be full-width, but the Sample Limit text box should not. */
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input {
+    flex: 1 0 100% !important;
+    max-width: none !important;
+    width: 100% !important;
+}
+
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input div[data-test="text"],
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input input[data-test="textbox"] {
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+}
+
+.dashboard-body .dashboard-form-globalfieldset .dig-sample-limit-input {
+    flex: 0 1 260px !important;
+    max-width: 260px !important;
+    min-width: 180px !important;
+    width: 260px !important;
+}
+
+.dashboard-body .dashboard-form-globalfieldset .dig-sample-limit-input .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .dig-sample-limit-input div[data-test="text"],
+.dashboard-body .dashboard-form-globalfieldset .dig-sample-limit-input input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .dig-sample-limit-input input[data-test="textbox"] {
+    width: 100% !important;
+    max-width: 260px !important;
+    box-sizing: border-box !important;
+}
+
+/* DIG Analysis Scope UI fixes: keep only Analysis Scope full width; compact all other controls. */
+.dashboard-body .dashboard-form-globalfieldset .input.input-text:not(.dig-analysis-scope-input),
+.dashboard-body .dashboard-form-globalfieldset .input-text:not(.dig-analysis-scope-input) {
+    flex: 0 1 320px !important;
+    max-width: 320px !important;
+    min-width: 220px !important;
+    width: 320px !important;
+}
+
+.dashboard-body .dashboard-form-globalfieldset .input.input-text:not(.dig-analysis-scope-input) .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .input-text:not(.dig-analysis-scope-input) .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .input.input-text:not(.dig-analysis-scope-input) div[data-test="text"],
+.dashboard-body .dashboard-form-globalfieldset .input-text:not(.dig-analysis-scope-input) div[data-test="text"],
+.dashboard-body .dashboard-form-globalfieldset .input.input-text:not(.dig-analysis-scope-input) input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .input-text:not(.dig-analysis-scope-input) input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .input.input-text:not(.dig-analysis-scope-input) input[data-test="textbox"],
+.dashboard-body .dashboard-form-globalfieldset .input-text:not(.dig-analysis-scope-input) input[data-test="textbox"] {
+    width: 100% !important;
+    max-width: 320px !important;
+    box-sizing: border-box !important;
+}
+
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input {
+    flex: 1 0 100% !important;
+    max-width: none !important;
+    width: 100% !important;
+}
+
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input .splunk-textinput,
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input div[data-test="text"],
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input input[type="text"],
+.dashboard-body .dashboard-form-globalfieldset .dig-analysis-scope-input input[data-test="textbox"] {
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+}
+
+body.dig-filters-hidden .dashboard-form-globalfieldset .input,
+body.dig-filters-hidden .dashboard-form-globalfieldset .form-submit,
+body.dig-filters-hidden .dashboard-form-globalfieldset .dashboard-form-submit,
+body.dig-filters-hidden .dashboard-form-globalfieldset .splunk-submit-button {
+    display: none !important;
+}
+
+body.dig-filters-hidden #dig_scope_toolbar .dig-scope-actions,
+body.dig-filters-hidden #dig_scope_toolbar .dig-scope-help {
+    display: none !important;
+}
+
+body.dig-filters-hidden #dig_scope_toolbar {
+    margin: 4px 0 10px 0;
+    padding: 8px 10px;
+}

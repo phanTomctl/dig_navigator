@@ -1,0 +1,6 @@
+object_type,object_name,enabled,healthy_seconds,warning_seconds,poor_seconds,notes
+sourcetype,example:cloudtrail,0,900,1800,3600,Example disabled row. object_type must be sourcetype or source. object_name is the exact sourcetype/source value. enabled 0 excludes it from timeliness findings. Thresholds are ingest delay seconds based on _indextime - _time.
+sourcetype,pan:traffic,0,60,300,900,Realtime network telemetry.
+sourcetype,aws:cloudtrail,0,900,1800,3600,Cloud provider delivery can legitimately lag.
+source,/var/log/messages,0,60,300,900,Example source-level override.
+sourcetype,symantec:ep:traffic:file,1,300,3000,4000,

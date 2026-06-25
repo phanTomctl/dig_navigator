@@ -1,0 +1,32 @@
+
+[]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[app]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[views]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[lookups]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[transforms]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[collections]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[collections/dig_analysis_scope]
+access = read : [ * ], write : [ * ]
+export = system
+
+[restmap]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system

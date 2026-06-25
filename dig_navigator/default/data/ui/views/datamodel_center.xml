@@ -1,0 +1,585 @@
+<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+  <label>Data Readiness IN</label>
+
+  <fieldset submitButton="false" autoRun="false">
+    <input type="text" token="base_search">
+      <label>Analysis Scope</label>
+      <default>index=somerandomindex sourcetype=mysourcetype</default>
+    </input>
+
+    <input type="time" token="time_range">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+
+    <input type="dropdown" token="group_by" searchWhenChanged="true">
+      <label>Group results by</label>
+      <choice value="sourcetype">Sourcetype</choice>
+      <choice value="source">Source</choice>
+      <default>sourcetype</default>
+    </input>
+
+    <input type="multiselect" token="selected_group" searchWhenChanged="true">
+      <label>Selected Data Source</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <fieldForLabel>group_value</fieldForLabel>
+      <fieldForValue>group_value</fieldForValue>
+      <search>
+        <query><![CDATA[
+$base_search$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| stats count by group_value
+| sort group_value
+        ]]></query>
+        <earliest>$time_range.earliest$</earliest>
+        <latest>$time_range.latest$</latest>
+      </search>
+      <delimiter>|</delimiter>
+    </input>
+
+    <input type="multiselect" token="datamodel_filter" searchWhenChanged="true">
+      <label>Datamodel</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <fieldForLabel>datamodel</fieldForLabel>
+      <fieldForValue>datamodel</fieldForValue>
+      <search>
+        <query><![CDATA[
+| inputlookup datamodel_fields_lookup
+| eval datamodel=trim(datamodel)
+| stats count by datamodel
+| sort datamodel
+        ]]></query>
+      </search>
+      <delimiter>|</delimiter>
+    </input>
+
+    <input type="dropdown" token="field_scope" searchWhenChanged="true">
+      <label>Field scope</label>
+      <choice value="recommended">Required / recommended fields</choice>
+      <choice value="all">All datamodel fields</choice>
+      <default>recommended</default>
+    </input>
+
+    <input type="dropdown" token="dm_perspective" searchWhenChanged="true">
+      <label>Datamodel perspective</label>
+      <choice value="potential">Potential Alignment</choice>
+      <choice value="operational">Current Alignment</choice>
+      <choice value="combined">Combined</choice>
+      <default>combined</default>
+    </input>
+  
+
+    <input type="text" token="sample_limit">
+      <label>Sample event limit</label>
+      <default>5000</default>
+    </input>
+
+  </fieldset>
+
+  <search id="base_dm_field_matches">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
+| eval selected_group_wrapped="|" . selected_group . "|"
+| where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+| eventstats values(tag) as observed_tags count as event_count by group_value
+| fields group_value observed_tags event_count *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
+| untable group_value field_name field_value
+| where isnotnull(field_value)
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="group_value"
+| where field_name!="observed_tags"
+| where field_name!="event_count"
+| stats count as field_instances values(observed_tags) as observed_tags max(event_count) as event_count by group_value field_name
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | fields datamodel field_name field_status recommended required model_field notes
+]
+| eval field_scope_match=case(
+    "$field_scope$"="all",1,
+    "$field_scope$"="recommended" AND model_field=1,1,
+    true(),0
+)
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_dm_totals">
+    <query><![CDATA[
+| inputlookup datamodel_fields_lookup
+| eval datamodel=trim(datamodel)
+| eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+| eval selected_dm_wrapped="|" . selected_dm . "|"
+| where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+| eval field_name=lower(trim(field_name))
+| eval recommended=if(recommended="true" OR recommended=1,1,0)
+| eval required=if(required="true" OR required=1,1,0)
+| eval model_field=if(recommended=1 OR required=1,1,0)
+| eval field_scope_match=case(
+    "$field_scope$"="all",1,
+    "$field_scope$"="recommended" AND model_field=1,1,
+    true(),0
+)
+| where field_scope_match=1
+| stats
+    dc(field_name) as total_scope_fields
+    dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields
+    dc(eval(if(required=1,field_name,null()))) as total_required_fields
+    by datamodel
+    ]]></query>
+  </search>
+
+  <row>
+    <panel>
+      <html>
+        <div class="devnull-hero">
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
+          <div>
+            <div class="devnull-title">Data Readiness Information Nexus</div>
+            <div class="devnull-subtitle">
+              Information Nexus for investigating CIM alignment, datamodel coverage, field evidence, tagging observations and acceleration readiness indicators.
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Datamodel Perspective by Datamodel</title>
+      <chart>
+        <search>
+          <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
+| eval selected_group_wrapped="|" . selected_group . "|"
+| where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+| eventstats values(tag) as scope_observed_tags
+| fields scope_observed_tags *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
+| untable scope_observed_tags field_name field_value
+| where isnotnull(field_value)
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="scope_observed_tags"
+| stats count as field_instances values(scope_observed_tags) as observed_tags by field_name
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | fields datamodel field_name scope_field
+]
+| stats
+    dc(field_name) as matched_scope_fields
+    values(observed_tags) as observed_tags
+    by datamodel
+| join type=left max=0 datamodel [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | stats dc(field_name) as total_scope_fields by datamodel
+]
+| eval datamodel_key=case(
+    lower(datamodel)="inventory","Compute_Inventory",
+    lower(datamodel)="java virtual machines","JVM",
+    true(),replace(datamodel," ","_")
+  )
+| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
+| join type=left max=0 datamodel_key [
+    | inputlookup cim_datamodel_tags_lookup
+    | eval datamodel_key=trim(datamodel)
+    | eval expected_tag=lower(trim(expected_tag))
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | where tag_role="top_level"
+    | fields datamodel_key expected_tag
+]
+| eval top_level_tag_observed=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| stats
+    max(top_level_tag_observed) as top_level_tag_observed
+    max(matched_scope_fields) as matched_scope_fields
+    max(total_scope_fields) as total_scope_fields
+    by datamodel
+| eval field_alignment_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
+| eval current_alignment_pct=if(top_level_tag_observed=1,field_alignment_pct,0)
+| eval potential_alignment_pct=if(top_level_tag_observed=0,field_alignment_pct,0)
+| where current_alignment_pct>0 OR potential_alignment_pct>0
+| eval "Current Alignment %"=case("$dm_perspective$"="operational" OR "$dm_perspective$"="current" OR "$dm_perspective$"="combined",current_alignment_pct,true(),null())
+| eval "Potential Alignment %"=case("$dm_perspective$"="potential" OR "$dm_perspective$"="combined",potential_alignment_pct,true(),null())
+| table datamodel "Current Alignment %" "Potential Alignment %"
+| sort - "Current Alignment %" - "Potential Alignment %" datamodel
+          ]]></query>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.axisTitleX.text">Datamodel</option>
+        <option name="charting.axisTitleY.text">Percentage</option>
+        <option name="charting.seriesColors">[#00e5ff,#7dff9a,#ffc857,#ff4fd8]</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Field Alignment and Readiness Summary</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Field-based alignment for datamodels detected in the selected data, with readiness context provided by CIM tag evidence elsewhere on this page.</p>
+              <p><strong>How to use it:</strong> Use this to understand which datamodels have enough field evidence to justify deeper onboarding, acceleration, or governance review.</p>
+              <p><strong>Read it as:</strong> Current alignment shows field coverage where the expected top-level CIM tag is observed. Potential alignment shows field coverage for datamodels where matching fields exist but the top-level tag is not observed.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_dm_field_matches">
+          <query><![CDATA[
+| where field_scope_match=1
+| stats
+    dc(field_name) as matched_scope_fields
+    dc(eval(if(model_field=1,field_name,null()))) as matched_required_recommended_fields
+    dc(eval(if(required=1,field_name,null()))) as matched_required_fields
+    sum(field_instances) as field_instances
+    max(event_count) as event_count
+    by datamodel group_value
+| join type=left max=0 datamodel [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | eval field_scope_match=case("$field_scope$"="all",1,"$field_scope$"="recommended" AND model_field=1,1,true(),0)
+    | where field_scope_match=1
+    | stats dc(field_name) as total_scope_fields dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields dc(eval(if(required=1,field_name,null()))) as total_required_fields by datamodel
+]
+| eval coverage_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
+| eval recommended_coverage_pct=if(total_required_recommended_fields>0,round((matched_required_recommended_fields/total_required_recommended_fields)*100,2),0)
+| eval required_coverage_pct=if(total_required_fields>0,round((matched_required_fields/total_required_fields)*100,2),0)
+| rename datamodel as Datamodel
+| rename group_value as "Data Source"
+| rename total_scope_fields as "Total Scope Fields"
+| rename matched_scope_fields as "Matched Scope Fields"
+| rename coverage_pct as "Field Coverage %"
+| rename recommended_coverage_pct as "Recommended Field Alignment %"
+| rename required_coverage_pct as "Required Coverage %"
+| rename event_count as "Events Checked"
+| table Datamodel "Data Source" "Events Checked" "Total Scope Fields" "Matched Scope Fields" "Field Coverage %" "Recommended Field Alignment %" "Required Coverage %" field_instances
+| sort Datamodel "Data Source"
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Matched Field Evidence</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> The fields observed in the data that match selected datamodel definitions.</p>
+              <p><strong>How to use it:</strong> Use this as the evidence trail for why a datamodel was considered relevant.</p>
+              <p><strong>Read it as:</strong> Fields marked required or recommended are usually stronger evidence than optional fields.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_dm_field_matches">
+          <query><![CDATA[
+| stats
+    sum(field_instances) as field_instances
+    values(field_status) as field_status
+    max(required) as required
+    max(recommended) as recommended
+    values(notes) as notes
+    by datamodel field_name group_value
+| eval field_importance=case(required=1,"Required", recommended=1,"Recommended", true(),"Optional")
+| rename group_value as "Data Source"
+| rename datamodel as Datamodel
+| rename field_name as Field
+| rename field_instances as "Field Instances"
+| rename field_importance as "Field Importance"
+| table Datamodel "Data Source" Field "Field Importance" "Field Instances"
+| sort Datamodel "Data Source" "Field Importance" - "Field Instances" Field
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Missing Required / Recommended Fields</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Required or recommended datamodel fields that were not observed in the selected data sample.</p>
+              <p><strong>How to use it:</strong> Use this to guide onboarding discussions and to understand what may be limiting CIM/datamodel usefulness.</p>
+              <p><strong>Read it as:</strong> A missing field does not always mean the data is bad. It may mean the field is not applicable, not extracted, or absent in the sample period.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_dm_field_matches">
+          <query><![CDATA[
+| where field_scope_match=1
+| stats dc(field_name) as matched by datamodel group_value field_name
+| appendpipe [
+    | stats values(group_value) as group_value by datamodel
+    | mvexpand group_value
+    | join type=inner max=0 datamodel [
+        | inputlookup datamodel_fields_lookup
+        | eval datamodel=trim(datamodel)
+        | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+        | eval selected_dm_wrapped="|" . selected_dm . "|"
+        | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+        | eval field_name=lower(trim(field_name))
+        | eval recommended=if(recommended="true" OR recommended=1,1,0)
+        | eval required=if(required="true" OR required=1,1,0)
+        | where recommended=1 OR required=1
+        | fields datamodel field_name field_status recommended required
+    ]
+    | eval matched=0
+]
+| stats max(matched) as matched values(field_status) as field_status max(recommended) as recommended max(required) as required values(notes) as notes by datamodel group_value field_name
+| where matched=0
+| eval field_importance=case(required=1,"Required", recommended=1,"Recommended", true(),"Optional")
+| rename datamodel as Datamodel
+| rename group_value as "Data Source"
+| rename field_name as "Missing Field"
+| rename field_importance as "Field Importance"
+| table Datamodel "Data Source" "Missing Field" "Field Importance" notes
+| sort Datamodel "Data Source" "Field Importance" "Missing Field"
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>CIM Tag Context</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Top-level and supporting CIM tags for matched datamodels compared with tags observed in the selected data.</p>
+              <p><strong>How to use it:</strong> Use this to separate potential field alignment from operational datamodel readiness.</p>
+              <p><strong>Read it as:</strong> Top-level tags indicate whether data is positioned for a datamodel. Supporting tags add context but should not be treated as sufficient by themselves.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search>
+          <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
+| eval selected_group_wrapped="|" . selected_group . "|"
+| where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+| fields group_value *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
+| untable group_value field_name field_value
+| where isnotnull(field_value)
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="group_value"
+| stats count as field_instances by group_value field_name
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | fields datamodel field_name field_status recommended required model_field notes
+]
+| eval field_scope_match=case(
+    "$field_scope$"="all",1,
+    "$field_scope$"="recommended" AND model_field=1,1,
+    true(),0
+)
+| where field_scope_match=1
+| eval datamodel_key=case(
+    lower(datamodel)="inventory","Compute_Inventory",
+    lower(datamodel)="java virtual machines","JVM",
+    true(),replace(datamodel," ","_")
+)
+| stats dc(field_name) as matched_fields by datamodel datamodel_key group_value
+| join type=left max=0 group_value [
+    search $base_search$
+    | head $sample_limit$
+    | eval group_value=if("$group_by$"="source", source, sourcetype)
+    | eval group_value=coalesce(group_value,"unknown")
+    | eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
+    | eval selected_group_wrapped="|" . selected_group . "|"
+    | where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+    | stats values(tag) as observed_tags by group_value
+]
+| join type=left max=0 datamodel_key [
+    | inputlookup cim_datamodel_tags_lookup
+    | eval datamodel_key=trim(datamodel)
+    | eval expected_tag=lower(trim(expected_tag))
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | stats
+        values(eval(if(tag_role="top_level",expected_tag,null()))) as top_level_tags
+        values(eval(if(tag_role="supporting",expected_tag,null()))) as supporting_tags
+        values(expected_tag) as expected_tags
+        by datamodel_key
+]
+| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
+| eval expected_tags=coalesce(expected_tags,"No expected tags mapped")
+| eval top_level_tags=coalesce(top_level_tags,"No top-level tags mapped")
+| eval supporting_tags=coalesce(supporting_tags,"No supporting tags mapped")
+| eval observed_tags=coalesce(observed_tags,"No observed tags")
+| eval top_level_eval=top_level_tags
+| mvexpand top_level_eval
+| eval top_level_tag_observed=case(
+    top_level_eval="No top-level tags mapped","unknown",
+    observed_tags="No observed tags","no",
+    mvfind(observed_tags, top_level_eval)>=0,"yes",
+    true(),"no"
+)
+| stats
+    values(top_level_tags) as top_level_tags
+    values(supporting_tags) as supporting_tags
+    values(observed_tags) as observed_tags
+    values(top_level_tag_observed) as top_level_tag_observed
+    max(matched_fields) as matched_fields
+    by datamodel group_value
+| eval top_level_tags=mvjoin(mvsort(top_level_tags),", ")
+| eval supporting_tags=mvjoin(mvsort(supporting_tags),", ")
+| eval observed_tags=mvjoin(mvsort(observed_tags),", ")
+| rename datamodel as Datamodel
+| rename group_value as "Data Source"
+| rename top_level_tags as "Top-Level Tags"
+| rename supporting_tags as "Supporting Tags"
+| rename observed_tags as "Observed Tags"
+| rename top_level_tag_observed as "Top-Level Tag Observed"
+| rename matched_fields as "Matched Fields"
+| table Datamodel "Data Source" "Matched Fields" "Top-Level Tags" "Supporting Tags" "Observed Tags" "Top-Level Tag Observed"
+| sort Datamodel "Data Source"
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Datamodel Acceleration Status</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Whether matched datamodels appear to have Splunk datamodel acceleration enabled.</p>
+              <p><strong>How to use it:</strong> Use this to identify where well-aligned data may support faster searches, dashboards, or Enterprise Security use cases.</p>
+              <p><strong>Read it as:</strong> Acceleration should be reviewed against search demand, data volume, and platform capacity before enabling.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_dm_field_matches">
+          <query><![CDATA[
+| stats dc(field_name) as matched_fields by datamodel
+| eval datamodel_alias=case(
+    lower(datamodel)="inventory", "compute_inventory",
+    lower(datamodel)="java virtual machines", "jvm",
+    true(), datamodel
+)
+| eval datamodel_norm=replace(lower(datamodel_alias),"[^a-z0-9]","")
+| join type=left max=0 datamodel_norm [
+    | rest /services/data/models
+    | rename title as rest_datamodel
+    | eval datamodel_alias=case(
+        lower(rest_datamodel)="compute_inventory", "compute_inventory",
+        lower(rest_datamodel)="jvm", "jvm",
+        true(), rest_datamodel
+    )
+    | eval datamodel_norm=replace(lower(datamodel_alias),"[^a-z0-9]","")
+    | eval acceleration_enabled=case(acceleration=1 OR acceleration="1" OR acceleration="true", "yes", isnotnull(acceleration), "no", true(), "unknown")
+    | eval acceleration_summary_range=coalesce('acceleration.earliest_time',"")
+    | fields datamodel_norm rest_datamodel acceleration_enabled acceleration_summary_range
+]
+| eval acceleration_enabled=coalesce(acceleration_enabled,"not found")
+| eval acceleration_summary_range=coalesce(acceleration_summary_range,"")
+| rename datamodel as Datamodel
+| rename rest_datamodel as "REST Datamodel"
+| rename matched_fields as "Matched Fields"
+| rename acceleration_enabled as "Acceleration Enabled"
+| rename acceleration_summary_range as "Acceleration Summary Range"
+| table Datamodel "Matched Fields" "Acceleration Enabled" "Acceleration Summary Range"
+| sort - "Matched Fields" Datamodel
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+</dashboard>

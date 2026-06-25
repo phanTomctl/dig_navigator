@@ -1,0 +1,980 @@
+<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+  <label>Data Intelligence</label>
+
+  <fieldset submitButton="false" autoRun="false">
+    <input type="text" token="base_search">
+      <label>Analysis Scope</label>
+      <default>index=somerandomindex sourcetype=mysourcetype</default>
+    </input>
+
+    <input type="time" token="time_range">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+
+    <input type="dropdown" token="group_by" searchWhenChanged="true">
+      <label>Group results by</label>
+      <choice value="sourcetype">Sourcetype</choice>
+      <choice value="source">Source</choice>
+      <default>sourcetype</default>
+    </input>
+
+  
+
+    <input type="text" token="sample_limit">
+      <label>Sample event limit</label>
+      <default>5000</default>
+    </input>
+
+  </fieldset>
+
+  <search id="base_structure">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
+| eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
+| spath
+| eval schema_fields=null()
+| foreach * [
+    eval schema_fields=if(
+        is_json=1
+        AND isnotnull('<<FIELD>>')
+        AND NOT match("<<FIELD>>","^_")
+        AND NOT match("<<FIELD>>","^(index|source|sourcetype|host|splunk_server|splunk_server_group|linecount|punct|tag|eventtype|group_value|is_json|is_xml|schema_fields)$"),
+        mvappend(schema_fields, lower("<<FIELD>>")),
+        schema_fields
+    )
+]
+| eval json_schema=if(is_json=1,mvjoin(mvsort(mvdedup(schema_fields)),"|"),null())
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_pairs>[A-Za-z0-9][A-Za-z0-9_]{0,100}\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s]+))"
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_keys>[A-Za-z0-9][A-Za-z0-9_]{0,100})\s*="
+| eval kv_count=mvcount(kv_pairs)
+| eval is_kv=if(kv_count>=3,1,0)
+| rex max_match=0 field=_raw "<\/?(?<xml_tags>[A-Za-z_][A-Za-z0-9_.:-]*)[\s>/]"
+| eval is_common_log=if(match(_raw,"^\S+\s+\S+\s+\S+\s+\[[^\]]+\]\s+\"[^\"]*\"\s+\d{3}\s+\S+"),1,0)
+| eval has_delimiter=if(match(_raw,"[,|;\t]") OR is_common_log=1,1,0)
+| eval is_delimited=if(is_json=0 AND is_xml=0 AND is_kv=0 AND has_delimiter=1,1,0)
+| eval delimiter_type=case(is_common_log=1,"common_log",match(_raw,"\|"),"pipe",match(_raw,","),"comma",match(_raw,";"),"semicolon",match(_raw,"\t"),"tab",true(),"none")
+| eval delimiter_field_count=case(delimiter_type="pipe",mvcount(split(_raw,"|")),delimiter_type="comma",mvcount(split(_raw,",")),delimiter_type="semicolon",mvcount(split(_raw,";")),delimiter_type="tab",mvcount(split(_raw,"\t")),delimiter_type="common_log",9,true(),0)
+| eval raw_len=len(_raw)
+| eval fallback_shape=replace(_raw,"\b\d{1,3}(\.\d{1,3}){3}\b","IP")
+| eval fallback_shape=replace(fallback_shape,"\b([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]*\b","IP")
+| eval fallback_shape=replace(fallback_shape,"[A-Fa-f0-9]{8,}","HEX")
+| eval fallback_shape=replace(fallback_shape,"\d+","N")
+| eval fallback_shape=trim(replace(fallback_shape,"\s+"," "))
+| eval raw_shape=case(is_json=1 AND isnotnull(json_schema) AND len(json_schema)>0,"json_schema:" . json_schema,is_xml=1 AND mvcount(xml_tags)>0,"xml_schema:" . mvjoin(mvsort(mvdedup(xml_tags)),"|"),is_kv=1 AND mvcount(kv_keys)>0,"kv_keys:" . mvjoin(mvsort(mvdedup(kv_keys)),"|"),is_delimited=1,"delimited:" . delimiter_type . ":fields=" . delimiter_field_count,true(),"freeform_shape:" . fallback_shape)
+| eval structure_hint=if(is_json=1 OR is_xml=1 OR is_kv=1 OR is_delimited=1,1,0)
+| stats
+    count as event_count
+    avg(structure_hint) as structure_ratio
+    dc(raw_shape) as distinct_shapes
+    avg(raw_len) as avg_raw_len
+    stdev(raw_len) as stdev_raw_len
+    by group_value
+| eval shape_ratio=if(event_count>0,round(distinct_shapes/event_count,4),0)
+| eval length_variance=if(avg_raw_len>0,round(stdev_raw_len/avg_raw_len,4),0)
+| eval Classification=case(
+    structure_ratio < 0.20, "Unstructured",
+    structure_ratio >= 0.85 AND shape_ratio <= 0.30, "Structured",
+    structure_ratio >= 0.40 AND shape_ratio <= 0.70, "Semi-Structured",
+    structure_ratio >= 0.40 AND shape_ratio > 0.70, "Inconsistent",
+    true(), "Unstructured"
+)
+| eval Classification_Confidence=case(
+    event_count < 50, "Low sample size",
+    event_count < 250, "Moderate sample size",
+    true(), "Higher sample size"
+)
+| fields group_value event_count structure_ratio shape_ratio length_variance Classification Classification_Confidence
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_field_summary">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| fieldsummary maxvals=0
+| rename field as field_name count as stream_field_count
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| fields field_name stream_field_count
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_field_reduction">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eventstats count as events_checked values(tag) as observed_tags by group_value
+| eval observed_tags_joined=mvjoin(observed_tags,"|||")
+| eval group_key=group_value . "###" . events_checked . "###" . observed_tags_joined
+| foreach * [
+    eval present_<<FIELD>>=if(isnotnull('<<FIELD>>'),"<<FIELD>>",null())
+]
+| fields group_key present_*
+| untable group_key temp_field field_name
+| rex field=group_key "^(?<group_value>.*?)###(?<events_checked>\d+)###(?<observed_tags_joined>.*)$"
+| eval observed_tags=split(observed_tags_joined,"|||")
+| eval events_checked=tonumber(events_checked)
+| eval field_name=replace(field_name,"^present_","")
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="group_value"
+| where field_name!="events_checked"
+| where field_name!="observed_tags"
+| where field_name!="event_count"
+| stats
+    count as field_instances
+    values(observed_tags) as observed_tags
+    max(events_checked) as events_checked
+    by group_value field_name
+| join type=left max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | stats max(model_field) as model_field by field_name datamodel
+    | rename datamodel as datamodels
+]
+| eval in_datamodel=if(isnotnull(datamodels),1,0)
+| eval keep_field=case(
+    "$model_scope$"="all" AND in_datamodel=1, 1,
+    "$model_scope$"="recommended" AND model_field=1, 1,
+    true(), 0
+)
+| eval would_drop=if(keep_field=1,0,1)
+| fields group_value field_name field_instances events_checked observed_tags in_datamodel model_field keep_field would_drop datamodels
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_timeliness_evidence">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval event_time=_time
+| eval index_time=_indextime
+| eval ingest_delay_seconds=index_time-event_time
+| eval ingest_delay_seconds=round(ingest_delay_seconds,0)
+| eval event_age_at_index_seconds=ingest_delay_seconds
+| eval index_lag_from_now_seconds=now()-index_time
+
+| eval group_object_type="$group_by$", group_object_name=group_value
+| lookup telemetry_timeliness_rules object_type AS group_object_type object_name AS group_object_name OUTPUT enabled AS group_enabled healthy_seconds AS group_healthy_seconds warning_seconds AS group_warning_seconds poor_seconds AS group_poor_seconds notes AS group_notes
+
+| eval sourcetype_object_type="sourcetype", sourcetype_object_name=sourcetype
+| lookup telemetry_timeliness_rules object_type AS sourcetype_object_type object_name AS sourcetype_object_name OUTPUT enabled AS sourcetype_enabled healthy_seconds AS sourcetype_healthy_seconds warning_seconds AS sourcetype_warning_seconds poor_seconds AS sourcetype_poor_seconds notes AS sourcetype_notes
+
+| eval source_object_type="source", source_object_name=source
+| lookup telemetry_timeliness_rules object_type AS source_object_type object_name AS source_object_name OUTPUT enabled AS source_enabled healthy_seconds AS source_healthy_seconds warning_seconds AS source_warning_seconds poor_seconds AS source_poor_seconds notes AS source_notes
+
+| eval default_object_type="default", default_object_name="*"
+| lookup telemetry_timeliness_rules object_type AS default_object_type object_name AS default_object_name OUTPUT enabled AS default_enabled healthy_seconds AS default_healthy_seconds warning_seconds AS default_warning_seconds poor_seconds AS default_poor_seconds notes AS default_notes
+
+| eval explicit_disabled=if(group_enabled=0 OR sourcetype_enabled=0 OR source_enabled=0,1,0)
+| where explicit_disabled!=1
+| eval enabled=coalesce(group_enabled,source_enabled,sourcetype_enabled,default_enabled,1)
+| eval healthy_seconds=tonumber(coalesce(group_healthy_seconds,source_healthy_seconds,sourcetype_healthy_seconds,default_healthy_seconds,300))
+| eval warning_seconds=tonumber(coalesce(group_warning_seconds,source_warning_seconds,sourcetype_warning_seconds,default_warning_seconds,1800))
+| eval poor_seconds=tonumber(coalesce(group_poor_seconds,source_poor_seconds,sourcetype_poor_seconds,default_poor_seconds,7200))
+| eval timeliness_rule_raw_note=coalesce(group_notes,source_notes,sourcetype_notes,default_notes)
+| eval timeliness_rule_from_lookup=if(isnotnull(group_enabled) OR isnotnull(group_healthy_seconds) OR isnotnull(source_enabled) OR isnotnull(source_healthy_seconds) OR isnotnull(sourcetype_enabled) OR isnotnull(sourcetype_healthy_seconds) OR isnotnull(default_enabled) OR isnotnull(default_healthy_seconds),1,0)
+| eval timeliness_rule_note=case(timeliness_rule_from_lookup=1 AND len(trim(coalesce(timeliness_rule_raw_note,"")))>0,timeliness_rule_raw_note,timeliness_rule_from_lookup=1,"Rule defined in telemetry_timeliness_rules",true(),"Default thresholds applied")
+| eval timeliness_rule_source=case(isnotnull(group_enabled) OR isnotnull(group_healthy_seconds), group_object_type . ":" . group_object_name, isnotnull(source_enabled) OR isnotnull(source_healthy_seconds), "source:" . source, isnotnull(sourcetype_enabled) OR isnotnull(sourcetype_healthy_seconds), "sourcetype:" . sourcetype, isnotnull(default_enabled) OR isnotnull(default_healthy_seconds), "default:*", true(), "dashboard fallback")
+| eval healthy_display=case(healthy_seconds<60,tostring(healthy_seconds) . "s",healthy_seconds<3600,tostring(round(healthy_seconds/60,1)) . "m",healthy_seconds<86400,tostring(round(healthy_seconds/3600,1)) . "h",true(),tostring(round(healthy_seconds/86400,1)) . "d")
+| eval warning_display=case(warning_seconds<60,tostring(warning_seconds) . "s",warning_seconds<3600,tostring(round(warning_seconds/60,1)) . "m",warning_seconds<86400,tostring(round(warning_seconds/3600,1)) . "h",true(),tostring(round(warning_seconds/86400,1)) . "d")
+| eval poor_display=case(poor_seconds<60,tostring(poor_seconds) . "s",poor_seconds<3600,tostring(round(poor_seconds/60,1)) . "m",poor_seconds<86400,tostring(round(poor_seconds/3600,1)) . "h",true(),tostring(round(poor_seconds/86400,1)) . "d")
+| eval expected_range="Healthy <=" . tostring(healthy_seconds) . "s (" . healthy_display . "), Warning >" . tostring(healthy_seconds) . "s and <=" . tostring(warning_seconds) . "s (" . warning_display . "), Poor >" . tostring(warning_seconds) . "s and <=" . tostring(poor_seconds) . "s (" . poor_display . "), Critical >" . tostring(poor_seconds) . "s (" . poor_display . ")"
+| eval old_event_seconds=2592000
+| eval future_skew_seconds=300
+| where enabled!=0
+
+| eval delay_category=case(
+    ingest_delay_seconds < 0, "Future timestamp",
+    ingest_delay_seconds <= healthy_seconds, "Healthy",
+    ingest_delay_seconds <= warning_seconds, "Warning",
+    ingest_delay_seconds <= poor_seconds, "Poor",
+    true(), "Critical"
+)
+| eval timestamp_indicator=case(
+    ingest_delay_seconds < 0, "Future timestamp",
+    ingest_delay_seconds > old_event_seconds, "Old event at index time",
+    true(), "Within configured bounds"
+)
+| eval ingest_delay_display=case(
+    abs(ingest_delay_seconds) < 60, tostring(ingest_delay_seconds) . "s",
+    abs(ingest_delay_seconds) < 3600, tostring(round(ingest_delay_seconds/60,1)) . "m",
+    abs(ingest_delay_seconds) < 86400, tostring(round(ingest_delay_seconds/3600,1)) . "h",
+    true(), tostring(round(ingest_delay_seconds/86400,1)) . "d"
+)
+| eval event_time_readable=strftime(event_time,"%Y-%m-%d %H:%M:%S")
+| eval index_time_readable=strftime(index_time,"%Y-%m-%d %H:%M:%S")
+| eval raw_preview=if(len(_raw)>500, substr(_raw,1,500) . " ... [TRUNCATED]", _raw)
+| fields _time event_time index_time event_time_readable index_time_readable index host source sourcetype group_value ingest_delay_seconds ingest_delay_display delay_category timestamp_indicator healthy_seconds warning_seconds poor_seconds healthy_display warning_display poor_display old_event_seconds future_skew_seconds timeliness_rule_source expected_range timeliness_rule_note raw_preview _raw
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+
+  <row>
+    <panel>
+      <html>
+        <div class="devnull-hero">
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" width="29.4" height="34" style="width:29.4px;height:34px;max-width:29.4px;max-height:34px;" />
+          <div>
+            <div class="devnull-title">Data Intelligence</div>
+            <div class="devnull-subtitle">
+              Understand the structure, quality, and operational value of your data by exploring CIM alignment, onboarding signals, datamodel coverage, acceleration suitability, and field composition.
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Data Quality Snapshot</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> A quality indicator derived from observed structure, consistency and CIM alignment characteristics.</p>
+            <p><strong>Why it matters:</strong> Data that is easier to interpret, classify and align is generally easier to operationalise, govern and investigate.</p>
+            <p><strong>Read it as:</strong> This is an indicator, not a certification. Use it as a starting point for investigation and review the supporting evidence in DIG IN: Data Quality before drawing conclusions.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search>
+          <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
+| eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
+| spath
+| eval schema_fields=null()
+| foreach * [ eval schema_fields=if(is_json=1 AND isnotnull('<<FIELD>>') AND NOT match("<<FIELD>>","^_") AND NOT match("<<FIELD>>","^(index|source|sourcetype|host|splunk_server|splunk_server_group|linecount|punct|tag|eventtype|group_value|is_json|is_xml|schema_fields)$"),mvappend(schema_fields, lower("<<FIELD>>")),schema_fields) ]
+| eval json_schema=if(is_json=1,mvjoin(mvsort(mvdedup(schema_fields)),"|"),null())
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_pairs>[A-Za-z0-9][A-Za-z0-9_]{0,100}\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s]+))"
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_keys>[A-Za-z0-9][A-Za-z0-9_]{0,100})\s*="
+| eval kv_count=mvcount(kv_pairs)
+| eval is_kv=if(kv_count>=3,1,0)
+| rex max_match=0 field=_raw "<\/?(?<xml_tags>[A-Za-z_][A-Za-z0-9_.:-]*)[\s>/]"
+| eval is_common_log=if(match(_raw,"^\S+\s+\S+\s+\S+\s+\[[^\]]+\]\s+\"[^\"]*\"\s+\d{3}\s+\S+"),1,0)
+| eval has_delimiter=if(match(_raw,"[,|;\t]") OR is_common_log=1,1,0)
+| eval is_delimited=if(is_json=0 AND is_xml=0 AND is_kv=0 AND has_delimiter=1,1,0)
+| eval delimiter_type=case(is_common_log=1,"common_log",match(_raw,"\|"),"pipe",match(_raw,","),"comma",match(_raw,";"),"semicolon",match(_raw,"\t"),"tab",true(),"none")
+| eval delimiter_field_count=case(delimiter_type="pipe",mvcount(split(_raw,"|")),delimiter_type="comma",mvcount(split(_raw,",")),delimiter_type="semicolon",mvcount(split(_raw,";")),delimiter_type="tab",mvcount(split(_raw,"\t")),delimiter_type="common_log",9,true(),0)
+| eval raw_len=len(_raw)
+| eval fallback_shape=replace(_raw,"\b\d{1,3}(\.\d{1,3}){3}\b","IP")
+| eval fallback_shape=replace(fallback_shape,"\b([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]*\b","IP")
+| eval fallback_shape=replace(fallback_shape,"[A-Fa-f0-9]{8,}","HEX")
+| eval fallback_shape=replace(fallback_shape,"\d+","N")
+| eval fallback_shape=trim(replace(fallback_shape,"\s+"," "))
+| eval raw_shape=case(is_json=1 AND isnotnull(json_schema) AND len(json_schema)>0,"json_schema:" . json_schema,is_xml=1 AND mvcount(xml_tags)>0,"xml_schema:" . mvjoin(mvsort(mvdedup(xml_tags)),"|"),is_kv=1 AND mvcount(kv_keys)>0,"kv_keys:" . mvjoin(mvsort(mvdedup(kv_keys)),"|"),is_delimited=1,"delimited:" . delimiter_type . ":fields=" . delimiter_field_count,true(),"freeform_shape:" . fallback_shape)
+| eval structure_hint=if(is_json=1 OR is_xml=1 OR is_kv=1 OR is_delimited=1,1,0)
+| stats count as event_count avg(structure_hint) as structure_ratio dc(raw_shape) as distinct_shapes avg(raw_len) as avg_raw_len stdev(raw_len) as stdev_raw_len by group_value
+| eval shape_ratio=if(event_count>0,distinct_shapes/event_count,0)
+| eval length_variance=if(avg_raw_len>0,stdev_raw_len/avg_raw_len,0)
+| eval structure_score=round(structure_ratio*100,0)
+| eval consistency_score=round(max(0,min(100,100-(shape_ratio*100)-(length_variance*25))),0)
+| stats avg(structure_score) as Structure avg(consistency_score) as Consistency
+| eval Structure=round(Structure,0), Consistency=round(Consistency,0)
+| appendcols [
+    | search $base_search$
+    | head $sample_limit$
+    | foreach * [ eval present_<<FIELD>>=if(isnotnull('<<FIELD>>'),"<<FIELD>>",null()) ]
+    | fields present_*
+    | untable temp_field ignore field_name
+    | eval field_name=replace(field_name,"^present_","")
+    | eval field_name=lower(trim(field_name))
+    | where NOT match(field_name,"^_")
+    | stats dc(field_name) as current_fields
+    | appendcols [
+        | search $base_search$
+        | head $sample_limit$
+        | foreach * [ eval present_<<FIELD>>=if(isnotnull('<<FIELD>>'),"<<FIELD>>",null()) ]
+        | fields present_*
+        | untable temp_field ignore field_name
+        | eval field_name=replace(field_name,"^present_","")
+        | eval field_name=lower(trim(field_name))
+        | where NOT match(field_name,"^_")
+        | join type=inner max=0 field_name [ | inputlookup datamodel_fields_lookup | eval field_name=lower(trim(field_name)) | fields field_name ]
+        | stats dc(field_name) as matched_dm_fields
+    ]
+    | eval "CIM Alignment"=round(if(current_fields>0,(matched_dm_fields/current_fields)*100,0),0)
+    | fields "CIM Alignment"
+]
+| eval Overall=round((Structure+Consistency+'CIM Alignment')/3,0)
+| table Overall Structure Consistency "CIM Alignment"
+| transpose 0 column_name="Quality Dimension"
+| rename "row 1" as "Score"
+          ]]></query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Quality Dimension</option>
+        <option name="charting.axisTitleY.text">Score out of 100</option>
+        <option name="charting.seriesColors">[#00e5ff]</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/data_quality_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=*&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+
+
+  <row>
+    <panel>
+      <title>Structured Data Classification</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> The observed distribution of structured, semi-structured, unstructured and inconsistent telemetry within the selected analysis scope.</p>
+            <p><strong>Why it matters:</strong> Data structure influences parsing consistency, field extraction opportunities and downstream analysis capabilities.</p>
+            <p><strong>Read it as:</strong> Classification is based on observed characteristics within sampled events. It provides evidence of structure patterns, not a judgement of business value or usefulness.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_structure">
+          <query><![CDATA[
+| stats count as count by Classification
+| sort Classification
+          ]]></query>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.chart.showPercent">1</option>
+        <option name="charting.chart.showLabels">1</option>
+      
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/data_structure_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=*&form.classification=$click.value|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+</chart>
+    </panel>
+
+    <panel>
+      <title>Structure Metrics by $group_by$</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> The underlying structure characteristics used to assess the selected source population, including structure ratio, shape diversity and event length variance.</p>
+            <p><strong>Why it matters:</strong> Different data sources often exhibit different formatting patterns, which can affect consistency, parsing reliability and analysis outcomes.</p>
+            <p><strong>Read it as:</strong> Higher structure ratios generally indicate more consistently formatted telemetry. They do not automatically indicate higher quality or greater operational value.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_structure">
+          <query><![CDATA[
+| fields group_value structure_ratio shape_ratio length_variance
+| rename group_value as "Data Source"
+| sort "Data Source"
+          ]]></query>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleX.text">$group_by$</option>
+        <option name="charting.axisTitleY.text">Metric value</option>
+      
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/data_structure_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=$click.value|u$&form.classification=*&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+</chart>
+    </panel>
+  </row>
+
+
+
+  <row>
+    <panel>
+      <title>Telemetry Delivery by $group_by$</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Average, percentile and maximum delivery lag by the selected grouping, calculated by comparing Splunk index time (_indextime) with the timestamp parsed onto the event (_time).</p>
+              <p><strong>Why it matters:</strong> Delivery lag can affect whether telemetry is available when searches, dashboards, detections or operational reviews expect it to be available.</p>
+              <p><strong>Read it as:</strong> This is comparative delivery evidence, not a root-cause finding. Future timestamp evidence is intentionally excluded here and handled separately in Timestamp Integrity by $group_by$.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| where delay_category!="Future timestamp"
+| stats
+    count as "Events Checked"
+    avg(ingest_delay_seconds) as avg_lag_seconds
+    median(ingest_delay_seconds) as median_lag_seconds
+    perc95(ingest_delay_seconds) as p95_lag_seconds
+    max(ingest_delay_seconds) as max_lag_seconds
+    values(timeliness_rule_source) as "Rule Source"
+    by group_value
+| eval "Average Lag"=case(
+    abs(avg_lag_seconds) < 60, tostring(round(avg_lag_seconds,0)) . "s",
+    abs(avg_lag_seconds) < 3600, tostring(round(avg_lag_seconds/60,1)) . "m",
+    abs(avg_lag_seconds) < 86400, tostring(round(avg_lag_seconds/3600,1)) . "h",
+    true(), tostring(round(avg_lag_seconds/86400,1)) . "d"
+)
+| eval "Median Lag"=case(
+    abs(median_lag_seconds) < 60, tostring(round(median_lag_seconds,0)) . "s",
+    abs(median_lag_seconds) < 3600, tostring(round(median_lag_seconds/60,1)) . "m",
+    abs(median_lag_seconds) < 86400, tostring(round(median_lag_seconds/3600,1)) . "h",
+    true(), tostring(round(median_lag_seconds/86400,1)) . "d"
+)
+| eval "P95 Lag"=case(
+    abs(p95_lag_seconds) < 60, tostring(round(p95_lag_seconds,0)) . "s",
+    abs(p95_lag_seconds) < 3600, tostring(round(p95_lag_seconds/60,1)) . "m",
+    abs(p95_lag_seconds) < 86400, tostring(round(p95_lag_seconds/3600,1)) . "h",
+    true(), tostring(round(p95_lag_seconds/86400,1)) . "d"
+)
+| eval "Max Lag"=case(
+    abs(max_lag_seconds) < 60, tostring(round(max_lag_seconds,0)) . "s",
+    abs(max_lag_seconds) < 3600, tostring(round(max_lag_seconds/60,1)) . "m",
+    abs(max_lag_seconds) < 86400, tostring(round(max_lag_seconds/3600,1)) . "h",
+    true(), tostring(round(max_lag_seconds/86400,1)) . "d"
+)
+| rename group_value as "Data Source"
+| table "Data Source" "Events Checked" "Average Lag" "Median Lag" "P95 Lag" "Max Lag"
+| sort - "Events Checked" "Data Source"
+          ]]></query>
+        </search>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/telemetry_timeliness_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=$row.Data Source|u$&form.selected_delay_category=*&form.selected_timestamp_indicator=*&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Timestamp Integrity by $group_by$</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Timestamp integrity indicators by the selected grouping, including events where the parsed event timestamp (_time) is ahead of the Splunk index time (_indextime).</p>
+              <p><strong>Why it matters:</strong> Future timestamps are important to spot quickly because they commonly indicate source clock skew, timezone handling or timestamp parsing issues. Future-dated events can be missed by time-bounded searches and detections until the event time becomes current.</p>
+              <p><strong>Read it as:</strong> This identifies timestamp evidence that warrants review. Use DIG IN: Telemetry Delivery to identify the affected source population and inspect representative events before deciding on corrective action.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| stats count by group_value timestamp_indicator
+| where count>0
+| chart sum(count) over timestamp_indicator
+| rename group_value as "Data Source"
+| sort "Data Source"
+          ]]></query>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.chart.showPercent">1</option>
+        <option name="charting.chart.showLabels">1</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/telemetry_timeliness_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=*&form.selected_delay_category=*&form.selected_timestamp_indicator=$click.value|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Datamodel Readiness Overview</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> Current datamodel alignment and potential alignment opportunities for Splunk CIM datamodels.</p>
+            <p><strong>Why it matters:</strong> Current alignment shows datamodel field coverage where the expected top-level CIM tag is observed. Potential alignment shows field coverage for datamodels where matching fields exist but the top-level tag is not observed.</p>
+            <p><strong>Read it as:</strong> Use Field scope to compare required/recommended fields or all datamodel fields. Use the Data Readiness IN drilldown for the field and tag evidence behind each result.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+
+      <input type="multiselect" token="datamodel_filter" searchWhenChanged="true">
+        <label>Datamodel</label>
+        <choice value="*">All</choice>
+        <default>*</default>
+        <fieldForLabel>datamodel</fieldForLabel>
+        <fieldForValue>datamodel</fieldForValue>
+        <search>
+          <query><![CDATA[
+| inputlookup datamodel_fields_lookup
+| stats count by datamodel
+| sort datamodel
+          ]]></query>
+        </search>
+        <delimiter>|</delimiter>
+      </input>
+
+
+
+      <input type="dropdown" token="field_scope" searchWhenChanged="true">
+        <label>Field scope</label>
+        <choice value="recommended">Required / recommended fields</choice>
+        <choice value="all">All datamodel fields</choice>
+        <default>recommended</default>
+      </input>
+      <input type="dropdown" token="dm_perspective" searchWhenChanged="true">
+        <label>Datamodel perspective</label>
+        <choice value="potential">Potential Alignment</choice>
+        <choice value="operational">Current Alignment</choice>
+        <choice value="combined">Combined</choice>
+        <default>combined</default>
+      </input>
+
+      <chart>
+        <search>
+          <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eventstats values(tag) as scope_observed_tags
+| fields scope_observed_tags *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
+| untable scope_observed_tags field_name field_value
+| where isnotnull(field_value)
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="scope_observed_tags"
+| stats count as field_instances values(scope_observed_tags) as observed_tags by field_name
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | fields datamodel field_name scope_field
+]
+| stats
+    dc(field_name) as matched_scope_fields
+    values(observed_tags) as observed_tags
+    by datamodel
+| join type=left max=0 datamodel [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | stats dc(field_name) as total_scope_fields by datamodel
+]
+| eval datamodel_key=case(
+    lower(datamodel)="inventory","Compute_Inventory",
+    lower(datamodel)="java virtual machines","JVM",
+    true(),replace(datamodel," ","_")
+  )
+| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
+| join type=left max=0 datamodel_key [
+    | inputlookup cim_datamodel_tags_lookup
+    | eval datamodel_key=trim(datamodel)
+    | eval expected_tag=lower(trim(expected_tag))
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | where tag_role="top_level"
+    | fields datamodel_key expected_tag
+]
+| eval top_level_tag_observed=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| stats
+    max(top_level_tag_observed) as top_level_tag_observed
+    max(matched_scope_fields) as matched_scope_fields
+    max(total_scope_fields) as total_scope_fields
+    by datamodel
+| eval field_alignment_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
+| eval current_alignment_pct=if(top_level_tag_observed=1,field_alignment_pct,0)
+| eval potential_alignment_pct=if(top_level_tag_observed=0,field_alignment_pct,0)
+| where current_alignment_pct>0 OR potential_alignment_pct>0
+| eval "Current Alignment %"=case("$dm_perspective$"="operational" OR "$dm_perspective$"="current" OR "$dm_perspective$"="combined",current_alignment_pct,true(),null())
+| eval "Potential Alignment %"=case("$dm_perspective$"="potential" OR "$dm_perspective$"="combined",potential_alignment_pct,true(),null())
+| table datamodel "Current Alignment %" "Potential Alignment %"
+| sort - "Current Alignment %" - "Potential Alignment %" datamodel
+          ]]></query>
+        </search>
+
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">-45</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=*&form.datamodel_filter=$click.value|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Potential CIM Alignment Opportunities</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> Data sources where observed fields align with one or more CIM datamodels, but the top-level CIM tag was not observed.</p>
+            <p><strong>Why it matters:</strong> Datamodel field alignment can indicate that telemetry may contain data relevant to a CIM use case. Without the top-level datamodel tag, that alignment may not be discoverable through tag-driven searches, datamodel workflows or CIM-based content.</p>
+            <p><strong>Read it as:</strong> This highlights potential gaps between field evidence and top-level CIM tagging evidence. Absence of observed tags is not proof that tags are missing, only that they were not detected within the selected scope and sample population.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+
+      <html>
+        <div class="panel-subtitle">
+          These sources contain fields that match CIM datamodels, but the top-level datamodel tag was not observed. Review these as potential tagging or onboarding opportunities rather than automatic tag recommendations.
+        </div>
+      </html>
+
+      <table>
+        <search base="base_field_reduction">
+          <query><![CDATA[
+  | where in_datamodel=1
+  | mvexpand datamodels
+  | rename datamodels as datamodel
+
+  | eval observed_tags=mvmap(observed_tags, lower(observed_tags))
+
+  | join type=inner max=0 datamodel [
+      | inputlookup cim_datamodel_tags_lookup
+      | eval datamodel=trim(datamodel)
+      | eval expected_tag=lower(trim(expected_tag))
+      | eval tag_role=coalesce(tag_role,"supporting")
+      | where tag_role="top_level"
+      | stats values(expected_tag) as expected_tags by datamodel
+  ]
+
+  | mvexpand expected_tags
+  | eval has_expected_tag=if(mvfind(observed_tags, expected_tags)>=0,1,0)
+
+  | stats
+      max(has_expected_tag) as has_expected_tag
+      max(events_checked) as events_checked
+      dc(field_name) as matched_dm_fields
+      values(field_name) as matching_fields
+      values(expected_tags) as related_cim_tags
+      values(observed_tags) as observed_tags
+      by group_value datamodel
+
+  | where has_expected_tag=0
+
+  | eval gap_severity=case(
+      matched_dm_fields>=20, "High",
+      matched_dm_fields>=10, "Medium",
+      true(), "Low"
+  )
+
+  | rename group_value as "Data Source"
+  | rename datamodel as "Potential Datamodel"
+  | rename events_checked as "Events Checked"
+  | rename matched_dm_fields as "Matched DM Fields"
+  | rename related_cim_tags as "Top-Level CIM Tags"
+  | rename observed_tags as "Observed Tags"
+  | rename matching_fields as "Matching Fields"
+  | rename gap_severity as "Gap Severity"
+
+  | table "Data Source" "Potential Datamodel" "Gap Severity" "Events Checked" "Matched DM Fields" "Top-Level CIM Tags" "Observed Tags" "Matching Fields"
+  | sort "Gap Severity" - "Matched DM Fields" "Data Source"
+          ]]></query>
+        </search>
+        <option name="count">5</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=$row.Data Source|u$&form.datamodel_filter=$row.Potential Datamodel|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Field Reduction Analysis</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> Controls for comparing observed fields against CIM-related field usage models.</p>
+            <p><strong>Why it matters:</strong> Understanding field utilisation patterns can help highlight differences between available telemetry and detected CIM relevance.</p>
+            <p><strong>Read it as:</strong> This is analysis evidence, not a recommendation to remove, suppress or discard data. Additional fields may still have operational, investigative, governance or business value.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+
+      <input type="dropdown" token="model_scope" searchWhenChanged="true">
+        <label>Reduction model</label>
+        <choice value="all">Keep all datamodel fields</choice>
+        <choice value="recommended">Keep recommended/model fields only</choice>
+        <default>recommended</default>
+      </input>
+
+      
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Field Composition by $group_by$</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> The composition of observed fields compared with the selected datamodel field model.</p>
+            <p><strong>Why it matters:</strong> Field composition provides context for understanding telemetry complexity, diversity and CIM alignment characteristics.</p>
+            <p><strong>Read it as:</strong> Fields that are not currently associated with CIM are not necessarily unnecessary. They may support operational, investigative, governance or business-specific requirements.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_field_reduction">
+          <query><![CDATA[
+| eval field_category=if(keep_field=1,"Matched DM Fields","Non-matched Fields")
+| stats dc(field_name) as field_count by group_value field_category
+| xyseries group_value field_category field_count
+| fillnull value=0 "Matched DM Fields" "Non-matched Fields"
+| rename group_value as "Data Source"
+          ]]></query>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Field Count</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=$click.value|u$&form.datamodel_filter=*&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Field Reduction % by $group_by$</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> The proportion of observed fields that fall outside the selected datamodel field model.</p>
+            <p><strong>Why it matters:</strong> Comparing sources using a consistent model can help identify differences in field composition and CIM alignment.</p>
+            <p><strong>Read it as:</strong> Higher percentages indicate greater divergence from the selected model. They do not indicate that fields should be removed without further review.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_field_reduction">
+          <query><![CDATA[
+| stats
+    dc(field_name) as current_fields
+    dc(eval(if(would_drop=1,field_name,null()))) as dropped_fields
+    dc(eval(if(keep_field=1,field_name,null()))) as matched_fields
+    by group_value
+| eval "Field Reduction %"=if(current_fields>0,round((dropped_fields/current_fields)*100,2),0)
+| eval "Field Reduction Status"=if(matched_fields=0,"No datamodel field alignment detected","Modelled")
+| rename group_value as "Data Source"
+| table "Data Source" "Field Reduction %"
+| sort - "Field Reduction %"
+          ]]></query>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleY.text">Reduction %</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=$click.value|u$&form.datamodel_filter=*&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Field Reduction Detail</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> Detailed field-level evidence supporting the field utilisation model for each selected source population.</p>
+            <p><strong>Why it matters:</strong> Reviewing field-level evidence provides transparency into how utilisation indicators and reduction estimates were produced.</p>
+            <p><strong>Read it as:</strong> This view exists to support investigation and understanding. It should not be interpreted as a directive to remove fields or change ingestion behaviour.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_field_reduction">
+          <query><![CDATA[
+| stats
+    dc(field_name) as current_fields
+    dc(eval(if(would_drop=1,field_name,null()))) as dropped_fields
+    dc(eval(if(keep_field=1,field_name,null()))) as future_fields
+    dc(eval(if(in_datamodel=1,datamodels,null()))) as matched_datamodels
+    by group_value
+| eval field_reduction_pct=if(current_fields>0,round((dropped_fields/current_fields)*100,2),0)
+| rename group_value as "Data Source"
+| rename current_fields as "Data Fields"
+| rename dropped_fields as "Non-matched Fields"
+| rename future_fields as "Matched DM Fields"
+| rename matched_datamodels as "Matched Datamodels"
+| rename field_reduction_pct as "Field Reduction %"
+| table "Data Source" "Data Fields" "Non-matched Fields" "Matched DM Fields" "Matched Datamodels" "Field Reduction %"
+| sort - "Field Reduction %"
+          ]]></query>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Matched Datamodel Acceleration Status</title>
+
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+            <p><strong>What this shows:</strong> The acceleration status of datamodels that have observable alignment within the selected analysis scope.</p>
+            <p><strong>Why it matters:</strong> Acceleration status can influence the performance characteristics of searches and analytics that rely on those datamodels.</p>
+            <p><strong>Read it as:</strong> Acceleration status is operational context only. It does not indicate whether acceleration should be enabled, disabled or modified.</p>
+          </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_field_summary">
+          <query><![CDATA[
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
+    | eval datamodel_alias=case(
+        lower(datamodel)="inventory", "compute_inventory",
+        lower(datamodel)="java virtual machines", "jvm",
+        true(), datamodel
+      )
+    | eval datamodel_norm=replace(lower(datamodel_alias),"[^a-z0-9]","")
+    | fields datamodel datamodel_norm field_name
+]
+| stats dc(field_name) as "Matched DM Fields" by datamodel datamodel_norm
+| join type=left max=0 datamodel_norm [
+    | rest /services/data/models
+    | rename title as rest_datamodel
+    | eval datamodel_alias=case(
+        lower(rest_datamodel)="compute_inventory", "compute_inventory",
+        lower(rest_datamodel)="jvm", "jvm",
+        true(), rest_datamodel
+      )
+    | eval datamodel_norm=replace(lower(datamodel_alias),"[^a-z0-9]","")
+    | eval acceleration_enabled=case(
+        acceleration=1 OR acceleration="1" OR acceleration="true", "yes",
+        isnotnull(acceleration), "no",
+        true(), "unknown"
+    )
+    | eval acceleration_summary_range=coalesce('acceleration.earliest_time',"")
+    | fields datamodel_norm rest_datamodel acceleration_enabled acceleration_summary_range
+]
+| eval "Acceleration Enabled"=coalesce(acceleration_enabled,"not found")
+| eval "Summary Range"=coalesce(acceleration_summary_range,"")
+| table datamodel "Matched DM Fields" "Acceleration Enabled" "Summary Range"
+| sort - "Matched DM Fields" datamodel
+          ]]></query>
+        </search>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=*&form.datamodel_filter=$row.datamodel|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$form.sample_limit|u$]]></link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Need Assistance?</title>
+      <html>
+        <div class="context-panel">
+          <p><strong>DIG is designed to help Splunk administrators, data owners, governance stakeholders, Security and Observability engineers identify data readiness concerns and decide what to investigate next.</strong></p>
+          <p>If the remediation path is unclear, start with your Splunk platform team or data owners. If you need support turning DIG findings into an onboarding plan, CIM alignment work, governance improvements, Enterprise Security readiness or Observability readiness activity, Dev/Null Security can help.</p>
+          <p><a href="https://devnullsecurity.co.uk/" target="_blank">Dev/Null Security</a> provides practical cyber security design, governance, assurance, operational improvement, and managed service support. For related thinking on Splunk data value, see the <a href="https://devnullsecurity.co.uk/White-Papers" target="_blank">Dev/Null white papers</a>.</p>
+          <p><a href="mailto:hello@devnullsecurity.co.uk">Contact Us</a></p>       
+        </div>
+      </html>
+    </panel>
+  </row>
+
+</dashboard>

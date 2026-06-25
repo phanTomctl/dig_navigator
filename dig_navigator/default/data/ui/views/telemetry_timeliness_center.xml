@@ -1,0 +1,451 @@
+<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+  <label>Telemetry Delivery IN</label>
+
+  <fieldset submitButton="false" autoRun="false">
+    <input type="text" token="base_search">
+      <label>Analysis Scope</label>
+      <default>index=somerandomindex sourcetype=mysourcetype</default>
+    </input>
+
+    <input type="time" token="time_range">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+
+    <input type="dropdown" token="group_by" searchWhenChanged="true">
+      <label>Group results by</label>
+      <choice value="sourcetype">Sourcetype</choice>
+      <choice value="source">Source</choice>
+      <default>sourcetype</default>
+    </input>
+
+    <input type="multiselect" token="selected_group" searchWhenChanged="true">
+      <label>Selected Data Source</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <fieldForLabel>group_value</fieldForLabel>
+      <fieldForValue>group_value</fieldForValue>
+      <search>
+        <query><![CDATA[
+$base_search$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| stats count by group_value
+| sort group_value
+        ]]></query>
+        <earliest>$time_range.earliest$</earliest>
+        <latest>$time_range.latest$</latest>
+      </search>
+      <delimiter>|</delimiter>
+    </input>
+
+    <input type="multiselect" token="selected_delay_category" searchWhenChanged="true">
+      <label>Delay Category</label>
+      <choice value="*">All</choice>
+      <choice value="Healthy">Healthy</choice>
+      <choice value="Warning">Warning</choice>
+      <choice value="Poor">Poor</choice>
+      <choice value="Critical">Critical</choice>
+      <choice value="Future timestamp">Future timestamp</choice>
+      <default>*</default>
+      <delimiter>|</delimiter>
+    </input>
+
+    <input type="multiselect" token="selected_timestamp_indicator" searchWhenChanged="true">
+      <label>Timestamp Integrity</label>
+      <choice value="*">All</choice>
+      <choice value="Within configured bounds">Within configured bounds</choice>
+      <choice value="Future timestamp">Future timestamp</choice>
+      <choice value="Old event at index time">Old event at index time</choice>
+      <default>*</default>
+      <delimiter>|</delimiter>
+    </input>
+  
+
+    <input type="text" token="sample_limit">
+      <label>Sample event limit</label>
+      <default>5000</default>
+    </input>
+
+  </fieldset>
+
+  <search id="base_timeliness_evidence">
+    <query><![CDATA[
+$base_search$
+| head $sample_limit$
+| eval group_value=if("$group_by$"="source", source, sourcetype)
+| eval group_value=coalesce(group_value,"unknown")
+| eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
+| eval selected_group_wrapped="|" . selected_group . "|"
+| where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+
+| eval event_time=_time
+| eval index_time=_indextime
+| eval ingest_delay_seconds=index_time-event_time
+| eval ingest_delay_seconds=round(ingest_delay_seconds,0)
+| eval event_age_at_index_seconds=ingest_delay_seconds
+| eval index_lag_from_now_seconds=now()-index_time
+
+| eval group_object_type="$group_by$", group_object_name=group_value
+| lookup telemetry_timeliness_rules object_type AS group_object_type object_name AS group_object_name OUTPUT enabled AS group_enabled healthy_seconds AS group_healthy_seconds warning_seconds AS group_warning_seconds poor_seconds AS group_poor_seconds notes AS group_notes
+
+| eval sourcetype_object_type="sourcetype", sourcetype_object_name=sourcetype
+| lookup telemetry_timeliness_rules object_type AS sourcetype_object_type object_name AS sourcetype_object_name OUTPUT enabled AS sourcetype_enabled healthy_seconds AS sourcetype_healthy_seconds warning_seconds AS sourcetype_warning_seconds poor_seconds AS sourcetype_poor_seconds notes AS sourcetype_notes
+
+| eval source_object_type="source", source_object_name=source
+| lookup telemetry_timeliness_rules object_type AS source_object_type object_name AS source_object_name OUTPUT enabled AS source_enabled healthy_seconds AS source_healthy_seconds warning_seconds AS source_warning_seconds poor_seconds AS source_poor_seconds notes AS source_notes
+
+| eval default_object_type="default", default_object_name="*"
+| lookup telemetry_timeliness_rules object_type AS default_object_type object_name AS default_object_name OUTPUT enabled AS default_enabled healthy_seconds AS default_healthy_seconds warning_seconds AS default_warning_seconds poor_seconds AS default_poor_seconds notes AS default_notes
+
+| eval explicit_disabled=if(group_enabled=0 OR sourcetype_enabled=0 OR source_enabled=0,1,0)
+| where explicit_disabled!=1
+| eval enabled=coalesce(group_enabled,source_enabled,sourcetype_enabled,default_enabled,1)
+| eval healthy_seconds=tonumber(coalesce(group_healthy_seconds,source_healthy_seconds,sourcetype_healthy_seconds,default_healthy_seconds,300))
+| eval warning_seconds=tonumber(coalesce(group_warning_seconds,source_warning_seconds,sourcetype_warning_seconds,default_warning_seconds,1800))
+| eval poor_seconds=tonumber(coalesce(group_poor_seconds,source_poor_seconds,sourcetype_poor_seconds,default_poor_seconds,7200))
+| eval timeliness_rule_raw_note=coalesce(group_notes,source_notes,sourcetype_notes,default_notes)
+| eval timeliness_rule_from_lookup=if(isnotnull(group_enabled) OR isnotnull(group_healthy_seconds) OR isnotnull(source_enabled) OR isnotnull(source_healthy_seconds) OR isnotnull(sourcetype_enabled) OR isnotnull(sourcetype_healthy_seconds) OR isnotnull(default_enabled) OR isnotnull(default_healthy_seconds),1,0)
+| eval timeliness_rule_note=case(timeliness_rule_from_lookup=1 AND len(trim(coalesce(timeliness_rule_raw_note,"")))>0,timeliness_rule_raw_note,timeliness_rule_from_lookup=1,"Rule defined in telemetry_timeliness_rules",true(),"Default thresholds applied")
+| eval timeliness_rule_source=case(isnotnull(group_enabled) OR isnotnull(group_healthy_seconds), group_object_type . ":" . group_object_name, isnotnull(source_enabled) OR isnotnull(source_healthy_seconds), "source:" . source, isnotnull(sourcetype_enabled) OR isnotnull(sourcetype_healthy_seconds), "sourcetype:" . sourcetype, isnotnull(default_enabled) OR isnotnull(default_healthy_seconds), "default:*", true(), "dashboard fallback")
+| eval healthy_display=case(healthy_seconds<60,tostring(healthy_seconds) . "s",healthy_seconds<3600,tostring(round(healthy_seconds/60,1)) . "m",healthy_seconds<86400,tostring(round(healthy_seconds/3600,1)) . "h",true(),tostring(round(healthy_seconds/86400,1)) . "d")
+| eval warning_display=case(warning_seconds<60,tostring(warning_seconds) . "s",warning_seconds<3600,tostring(round(warning_seconds/60,1)) . "m",warning_seconds<86400,tostring(round(warning_seconds/3600,1)) . "h",true(),tostring(round(warning_seconds/86400,1)) . "d")
+| eval poor_display=case(poor_seconds<60,tostring(poor_seconds) . "s",poor_seconds<3600,tostring(round(poor_seconds/60,1)) . "m",poor_seconds<86400,tostring(round(poor_seconds/3600,1)) . "h",true(),tostring(round(poor_seconds/86400,1)) . "d")
+| eval expected_range="Healthy <=" . tostring(healthy_seconds) . "s (" . healthy_display . "), Warning >" . tostring(healthy_seconds) . "s and <=" . tostring(warning_seconds) . "s (" . warning_display . "), Poor >" . tostring(warning_seconds) . "s and <=" . tostring(poor_seconds) . "s (" . poor_display . "), Critical >" . tostring(poor_seconds) . "s (" . poor_display . ")"
+| eval old_event_seconds=2592000
+| eval future_skew_seconds=300
+| where enabled!=0
+
+| eval delay_category=case(
+    ingest_delay_seconds < 0, "Future timestamp",
+    ingest_delay_seconds <= healthy_seconds, "Healthy",
+    ingest_delay_seconds <= warning_seconds, "Warning",
+    ingest_delay_seconds <= poor_seconds, "Poor",
+    true(), "Critical"
+)
+| eval timestamp_indicator=case(
+    ingest_delay_seconds < 0, "Future timestamp",
+    ingest_delay_seconds > old_event_seconds, "Old event at index time",
+    true(), "Within configured bounds"
+)
+| eval selected_delay_category=if(len("$selected_delay_category$")=0,"*","$selected_delay_category$")
+| eval selected_delay_category_wrapped="|" . selected_delay_category . "|"
+| where selected_delay_category="*" OR like(selected_delay_category_wrapped,"%|*|%") OR like(selected_delay_category_wrapped,"%|" . delay_category . "|%")
+| eval selected_timestamp_indicator=if(len("$selected_timestamp_indicator$")=0,"*","$selected_timestamp_indicator$")
+| eval selected_timestamp_indicator_wrapped="|" . selected_timestamp_indicator . "|"
+| where selected_timestamp_indicator="*" OR like(selected_timestamp_indicator_wrapped,"%|*|%") OR like(selected_timestamp_indicator_wrapped,"%|" . timestamp_indicator . "|%")
+| eval ingest_delay_display=case(
+    abs(ingest_delay_seconds) < 60, tostring(ingest_delay_seconds) . "s",
+    abs(ingest_delay_seconds) < 3600, tostring(round(ingest_delay_seconds/60,1)) . "m",
+    abs(ingest_delay_seconds) < 86400, tostring(round(ingest_delay_seconds/3600,1)) . "h",
+    true(), tostring(round(ingest_delay_seconds/86400,1)) . "d"
+)
+| eval event_time_readable=strftime(event_time,"%Y-%m-%d %H:%M:%S")
+| eval index_time_readable=strftime(index_time,"%Y-%m-%d %H:%M:%S")
+| eval raw_preview=if(len(_raw)>500, substr(_raw,1,500) . " ... [TRUNCATED]", _raw)
+| fields _time event_time index_time event_time_readable index_time_readable index host source sourcetype group_value ingest_delay_seconds ingest_delay_display delay_category timestamp_indicator healthy_seconds warning_seconds poor_seconds healthy_display warning_display poor_display old_event_seconds future_skew_seconds timeliness_rule_source expected_range timeliness_rule_note raw_preview _raw
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <row>
+    <panel>
+      <html>
+        <div class="devnull-hero">
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
+          <div>
+            <div class="devnull-title">Telemetry Delivery Information Nexus</div>
+            <div class="devnull-subtitle">
+              Information Nexus for investigating telemetry delivery characteristics, timestamp integrity and event ingestion timeliness evidence.
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Delivery Summary</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Summary delivery delay statistics for the selected telemetry sample.</p>
+              <p><strong>How it is calculated:</strong> Delay is calculated as <code>_indextime - _time</code>. Median and percentile values are less sensitive to outliers than a simple average.</p>
+              <p><strong>Read it as:</strong> High delay can indicate delivery backlog, batch collection, API polling delay, or incorrect timestamp extraction. Use the timestamp panels to separate expected delay from timestamp quality issues.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| stats
+    count as events_sampled
+    median(ingest_delay_seconds) as median_delay_seconds
+    perc95(ingest_delay_seconds) as p95_delay_seconds
+    max(ingest_delay_seconds) as max_delay_seconds
+    count(eval(delay_category="Healthy")) as healthy_delay_events
+    count(eval(delay_category="Warning")) as warning_delay_events
+    count(eval(delay_category="Poor")) as poor_delay_events
+    count(eval(delay_category="Critical")) as critical_delay_events
+    count(eval(timestamp_indicator="Future timestamp")) as future_timestamp_events
+    count(eval(timestamp_indicator="Old event at index time")) as old_event_at_index_events
+| eval median_delay=case(abs(median_delay_seconds)<60,tostring(round(median_delay_seconds,0))."s",abs(median_delay_seconds)<3600,tostring(round(median_delay_seconds/60,1))."m",abs(median_delay_seconds)<86400,tostring(round(median_delay_seconds/3600,1))."h",true(),tostring(round(median_delay_seconds/86400,1))."d")
+| eval p95_delay=case(abs(p95_delay_seconds)<60,tostring(round(p95_delay_seconds,0))."s",abs(p95_delay_seconds)<3600,tostring(round(p95_delay_seconds/60,1))."m",abs(p95_delay_seconds)<86400,tostring(round(p95_delay_seconds/3600,1))."h",true(),tostring(round(p95_delay_seconds/86400,1))."d")
+| eval max_delay=case(abs(max_delay_seconds)<60,tostring(round(max_delay_seconds,0))."s",abs(max_delay_seconds)<3600,tostring(round(max_delay_seconds/60,1))."m",abs(max_delay_seconds)<86400,tostring(round(max_delay_seconds/3600,1))."h",true(),tostring(round(max_delay_seconds/86400,1))."d")
+| eval worst_observed_status=case(future_timestamp_events>0,"Future timestamp",critical_delay_events>0,"Critical",poor_delay_events>0,"Poor",warning_delay_events>0,"Warning",true(),"Healthy")
+| fields events_sampled median_delay p95_delay max_delay healthy_delay_events warning_delay_events poor_delay_events critical_delay_events future_timestamp_events old_event_at_index_events worst_observed_status
+          ]]></query>
+        </search>
+        <option name="count">5</option>
+      </table>
+    </panel>
+  </row>
+
+
+
+  <row>
+    <panel>
+      <title>Configured Delivery Rules</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> The active and excluded rules from the <code>telemetry_timeliness_rules</code> lookup.</p>
+              <p><strong>How to use it:</strong> Confirm that the selected source or sourcetype has the expected thresholds. <code>poor_seconds</code> is the upper boundary for Poor; anything above it is Critical.</p>
+              <p><strong>Rule matching:</strong> The evidence search checks the selected grouping rule first, then source, then sourcetype, then an optional <code>default,*</code> row, then dashboard fallback thresholds.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search>
+          <query><![CDATA[
+| inputlookup telemetry_timeliness_rules
+| eval status=if(enabled=0,"Excluded","Active")
+| eval healthy_range="<= " . healthy_seconds . "s"
+| eval warning_range="> " . healthy_seconds . "s and <= " . warning_seconds . "s"
+| eval poor_range="> " . warning_seconds . "s and <= " . poor_seconds . "s"
+| eval critical_range="> " . poor_seconds . "s"
+| fields object_type object_name status healthy_range warning_range poor_range critical_range notes
+| sort object_type object_name
+          ]]></query>
+        </search>
+        <option name="count">5</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Delay Category Distribution</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Events grouped into configurable delivery-delay buckets.</p>
+              <p><strong>How to use it:</strong> A small number of delayed events may be normal for batch or cloud sources. A broad shift into Warning, Poor, or Critical usually deserves investigation.</p>
+              <p><strong>Configuration:</strong> Thresholds and exclusions are controlled by the <code>telemetry_timeliness_rules</code> lookup, not by dashboard inputs. Use <code>enabled=0</code> to exclude a source or sourcetype from this view.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| stats count by delay_category
+| appendpipe [ stats count as _seed | eval delay_category=split("Healthy,Warning,Poor,Critical,Future timestamp",",") | mvexpand delay_category | eval count=0 | fields delay_category count ]
+| stats sum(count) as count by delay_category
+| eval sort_order=case(delay_category="Healthy",1,delay_category="Warning",2,delay_category="Poor",3,delay_category="Critical",4,delay_category="Future timestamp",5,true(),99)
+| sort sort_order
+| fields - sort_order
+          ]]></query>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Median Delivery Delay Trend</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Median delivery delay over time for the selected telemetry.</p>
+              <p><strong>How to use it:</strong> Look for step changes or rising trends that indicate collection, queueing, or platform delivery changes during the selected period.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| timechart median(ingest_delay_seconds) as median_delay_seconds perc95(ingest_delay_seconds) as p95_delay_seconds
+          ]]></query>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Delivery by Selected Data Source</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Delivery delay metrics grouped by the selected grouping field.</p>
+              <p><strong>How to use it:</strong> Sort by p95 or max delay to find sources with intermittent delivery problems. Sort by future or old timestamp counts to identify timestamp extraction problems.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| stats
+    count as events_sampled
+    median(ingest_delay_seconds) as median_delay_seconds
+    perc95(ingest_delay_seconds) as p95_delay_seconds
+    max(ingest_delay_seconds) as max_delay_seconds
+    count(eval(delay_category="Healthy")) as healthy_delay_events
+    count(eval(delay_category="Warning")) as warning_delay_events
+    count(eval(delay_category="Poor")) as poor_delay_events
+    count(eval(delay_category="Critical")) as critical_delay_events
+    count(eval(timestamp_indicator="Future timestamp")) as future_timestamp_events
+    count(eval(timestamp_indicator="Old event at index time")) as old_event_at_index_events
+    latest(event_time) as latest_event_time
+    latest(index_time) as latest_index_time
+    values(timeliness_rule_source) as rule_source
+    values(expected_range) as expected_range
+    values(timeliness_rule_note) as rule_note
+    max(healthy_seconds) as healthy_seconds
+    max(warning_seconds) as warning_seconds
+    max(poor_seconds) as poor_seconds
+    by group_value
+| eval median_delay=case(abs(median_delay_seconds)<60,tostring(round(median_delay_seconds,0))."s",abs(median_delay_seconds)<3600,tostring(round(median_delay_seconds/60,1))."m",abs(median_delay_seconds)<86400,tostring(round(median_delay_seconds/3600,1))."h",true(),tostring(round(median_delay_seconds/86400,1))."d")
+| eval p95_delay=case(abs(p95_delay_seconds)<60,tostring(round(p95_delay_seconds,0))."s",abs(p95_delay_seconds)<3600,tostring(round(p95_delay_seconds/60,1))."m",abs(p95_delay_seconds)<86400,tostring(round(p95_delay_seconds/3600,1))."h",true(),tostring(round(p95_delay_seconds/86400,1))."d")
+| eval max_delay=case(abs(max_delay_seconds)<60,tostring(round(max_delay_seconds,0))."s",abs(max_delay_seconds)<3600,tostring(round(max_delay_seconds/60,1))."m",abs(max_delay_seconds)<86400,tostring(round(max_delay_seconds/3600,1))."h",true(),tostring(round(max_delay_seconds/86400,1))."d")
+| eval latest_event_time=strftime(latest_event_time,"%Y-%m-%d %H:%M:%S")
+| eval latest_index_time=strftime(latest_index_time,"%Y-%m-%d %H:%M:%S")
+| eval critical_boundary=">" . tostring(poor_seconds) . "s (" . poor_display . ")"
+| eval worst_observed_status=case(future_timestamp_events>0,"Future timestamp",critical_delay_events>0,"Critical",poor_delay_events>0,"Poor",warning_delay_events>0,"Warning",true(),"Healthy")
+| sort - p95_delay_seconds
+| fields group_value worst_observed_status events_sampled median_delay p95_delay max_delay healthy_delay_events warning_delay_events poor_delay_events critical_delay_events critical_boundary future_timestamp_events old_event_at_index_events latest_event_time latest_index_time rule_source rule_note
+          ]]></query>
+        </search>
+        <option name="count">5</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Timestamp Integrity Indicators</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Events whose event time is ahead of index time, or unusually old at the point of indexing.</p>
+              <p><strong>How to use it:</strong> Future timestamps usually indicate source clock skew, timezone handling, or timestamp parsing issues. They are important to surface because future-dated events can be missed by time-bounded searches and detections until the event time becomes current. Very old timestamps may be normal for backfill data, but can also indicate parser or source replay problems.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| stats count by timestamp_indicator
+| appendpipe [ stats count as _seed | eval timestamp_indicator=split("Within configured bounds,Future timestamp,Old event at index time",",") | mvexpand timestamp_indicator | eval count=0 | fields timestamp_indicator count ]
+| stats sum(count) as count by timestamp_indicator
+| eval sort_order=case(timestamp_indicator="Within configured bounds",1,timestamp_indicator="Future timestamp",2,timestamp_indicator="Old event at index time",3,true(),99)
+| sort sort_order
+| fields - sort_order
+          ]]></query>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Delay Percentile Profile</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Median, p90, p95 and maximum delivery delay by Data Source, evaluated against the rule applied to that source or sourcetype.</p>
+              <p><strong>How to use it:</strong> Compare the percentile statuses and critical boundary to confirm whether the observed delay actually crosses the configured lookup thresholds.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| stats median(ingest_delay_seconds) as median_seconds p90(ingest_delay_seconds) as p90_seconds p95(ingest_delay_seconds) as p95_seconds max(ingest_delay_seconds) as max_seconds values(timeliness_rule_source) as rule_source max(healthy_seconds) as healthy_seconds max(warning_seconds) as warning_seconds max(poor_seconds) as poor_seconds by group_value
+| eval median_status=case(median_seconds<0,"Future timestamp",median_seconds<=healthy_seconds,"Healthy",median_seconds<=warning_seconds,"Warning",median_seconds<=poor_seconds,"Poor",true(),"Critical")
+| eval p90_status=case(p90_seconds<0,"Future timestamp",p90_seconds<=healthy_seconds,"Healthy",p90_seconds<=warning_seconds,"Warning",p90_seconds<=poor_seconds,"Poor",true(),"Critical")
+| eval p95_status=case(p95_seconds<0,"Future timestamp",p95_seconds<=healthy_seconds,"Healthy",p95_seconds<=warning_seconds,"Warning",p95_seconds<=poor_seconds,"Poor",true(),"Critical")
+| eval max_status=case(max_seconds<0,"Future timestamp",max_seconds<=healthy_seconds,"Healthy",max_seconds<=warning_seconds,"Warning",max_seconds<=poor_seconds,"Poor",true(),"Critical")
+| eval critical_boundary=">" . tostring(poor_seconds) . "s (" . poor_display . ")"
+| rename median_seconds as median p90_seconds as p90 p95_seconds as p95 max_seconds as max
+| foreach median p90 p95 max [ eval <<FIELD>>=case(abs(<<FIELD>>)<60,tostring(round(<<FIELD>>,0))."s",abs(<<FIELD>>)<3600,tostring(round(<<FIELD>>/60,1))."m",abs(<<FIELD>>)<86400,tostring(round(<<FIELD>>/3600,1))."h",true(),tostring(round(<<FIELD>>/86400,1))."d") ]
+| fields group_value rule_source median median_status p90 p90_status p95 p95_status max max_status critical_boundary
+| sort group_value
+          ]]></query>
+        </search>
+        <option name="count">5</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Representative Delayed Events</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Example events with the highest measured delivery delay in the selected sample.</p>
+              <p><strong>How to use it:</strong> Use these examples to determine whether delay is caused by real collection backlog, source replay, batch collection, or timestamp extraction problems.</p>
+              <p><strong>Evidence:</strong> Raw events are intentionally shown as representative evidence and truncated only for display safety.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_timeliness_evidence">
+          <query><![CDATA[
+| sort - ingest_delay_seconds
+| head 25
+| fields group_value sourcetype source host event_time_readable index_time_readable ingest_delay_display delay_category timestamp_indicator timeliness_rule_source timeliness_rule_note raw_preview
+          ]]></query>
+        </search>
+        <option name="count">5</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>

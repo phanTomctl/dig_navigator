@@ -1,0 +1,63 @@
+<dashboard version="1.1" stylesheet="devnull.css">
+  <label>About DIG</label>
+
+  <row>
+    <panel>
+      <html>
+        <div class="devnull-hero">
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
+          <div>
+            <div class="devnull-title">DIG Navigator</div>
+            <div class="devnull-subtitle">
+              Data Intelligence &amp; Governance for Splunk data readiness, CIM alignment, onboarding opportunity, and operational value.
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What DIG Helps You Understand</title>
+      <html>
+        <div class="context-panel">
+          <p><strong>DIG Navigator helps you understand the operational value and readiness of data in Splunk.</strong></p>
+          <p>Use DIG to review data structure, quality, field evidence, CIM tag context, datamodel readiness, governance alignment, telemetry timeliness, and onboarding opportunities.</p>
+          <p>DIG does not replace Splunk expertise or CIM validation tooling. It gives administrators, engineers, analysts, and governance stakeholders a shared evidence base for deciding what to improve next.</p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Recommended Workflow</title>
+      <html>
+        <div class="context-panel">
+          <ol>
+            <li><strong>First time run?</strong> Make sure to navigate to the Configuration page to create the necessary lookups that help to power this app.</li>
+            <li><strong>Start with Data Intelligence</strong> to identify data quality, structure, CIM alignment, and datamodel readiness concerns.</li>
+            <li><strong>Review Data Governance</strong> to understand freshness, timeliness, coverage, retention, and governance alignment signals.</li>
+            <li><strong>Use DIG Intelligence Nexus (IN) dashboards</strong> to investigate the evidence behind executive-level findings.</li>
+            <li><strong>Act on the evidence</strong> by updating onboarding, field extractions, CIM tags, datamodel alignment, governance mappings, or telemetry timeliness rules where appropriate.</li>
+          </ol>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>About Dev/Null Security</title>
+      <html>
+        <div class="context-panel">
+          <p>We are Dev/Null Security, a UK-based cyber security specialists focused on designing, building, and running security services that work.</p>
+          <p>We help organisations improve visibility, strengthen defences, and operate with confidence across security architecture, engineering, governance, assurance, managed services, and operational improvement.</p>
+          <p>If DIG highlights issues but the remediation path is unclear, Dev/Null Security can help turn the findings into a practical improvement plan for Splunk onboarding, CIM alignment, governance design, telemetry readiness, and Enterprise Security enablement.</p>
+          <p><a href="https://devnullsecurity.co.uk/" target="_blank">Visit Dev/Null Security</a> · <a href="https://devnullsecurity.co.uk/White-Papers" target="_blank">Request Dev/Null white papers</a> · <a href="mailto:hello@devnullsecurity.co.uk">Contact Us</a></p>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>
