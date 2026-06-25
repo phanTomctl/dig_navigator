@@ -29,13 +29,6 @@
       <default>1000</default>
     </input>
 
-    <input type="dropdown" token="model_scope" searchWhenChanged="true">
-      <label>Reduction model</label>
-      <choice value="all">Keep all datamodel fields</choice>
-      <choice value="recommended">Keep recommended/model fields only</choice>
-      <default>recommended</default>
-    </input>
-
   </fieldset>
 
   <search id="base_structure">
@@ -741,7 +734,13 @@ $base_search$
         </div>
       </html>
 
-      
+      <input type="dropdown" token="model_scope" searchWhenChanged="true">
+        <label>Reduction model</label>
+        <choice value="all">Keep all datamodel fields</choice>
+        <choice value="recommended">Keep recommended/model fields only</choice>
+        <default>recommended</default>
+      </input>
+
     </panel>
   </row>
 
