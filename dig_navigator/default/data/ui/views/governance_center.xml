@@ -80,7 +80,6 @@
       <search>
         <query><![CDATA[
 $base_search$
-| head $sample_limit$
 | eval group_value=if("$group_by$"="source", source, sourcetype)
 | eval group_value=coalesce(group_value,"unknown")
 | stats count by group_value
@@ -132,7 +131,7 @@ $base_search$
 
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
-      <default>5000</default>
+      <default>1000</default>
     </input>
 
   </fieldset>

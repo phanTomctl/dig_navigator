@@ -55,7 +55,7 @@ $base_search$
 
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
-      <default>5000</default>
+      <default>1000</default>
     </input>
 
   </fieldset>
@@ -71,7 +71,8 @@ $base_search$
 | where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
 | eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
 | eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
-| spath
+| eval json_payload=if(is_json=1,_raw,null())
+| spath input=json_payload
 | eval schema_fields=null()
 | foreach * [
     eval schema_fields=if(
