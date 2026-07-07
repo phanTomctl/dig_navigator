@@ -9,7 +9,7 @@
           <div>
             <div class="devnull-title">Configuration</div>
             <div class="devnull-subtitle">
-              Build and validate CIM/datamodel, tag, and governance mapping data used by the app.
+              Build and validate CIM field and tag metadata from SA_CIM, plus governance mapping data used by the app.
             </div>
           </div>
         </div>
@@ -22,12 +22,12 @@
       <html>
       
         <button id="run_scrape_btn" class="btn btn-primary">
-          Refresh CIM Field Metadata
+          Field Metadata
         </button>
         <span id="scrape_status" style="margin-left: 12px;"></span>
 
         <button id="build_tags_btn" class="btn btn-primary">
-          Build Curated CIM Tag Mapping
+          Tag Metadata
         </button>
 
         <span id="tag_status" style="margin-left: 12px;"></span>
