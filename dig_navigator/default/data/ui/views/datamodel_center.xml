@@ -205,17 +205,19 @@ $base_search$
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
 | join type=left max=0 datamodel_key [
     | inputlookup cim_datamodel_tags_lookup
-    | eval datamodel_key=trim(datamodel)
+    | eval datamodel_key=case(
+        lower(datamodel)="inventory","Compute_Inventory",
+        lower(datamodel)="java virtual machines","JVM",
+        true(),replace(datamodel," ","_")
+      )
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | where tag_role="top_level"
-    | stats values(expected_tag) as expected_tags by datamodel_key
+    | fields datamodel_key expected_tag
 ]
-| eval expected_tags=if(isnull(expected_tags),"__no_expected_tag__",mvmap(expected_tags, lower(trim(expected_tags))))
-| mvexpand expected_tags
-| eval expected_tag_match=if(expected_tags!="__no_expected_tag__" AND mvfind(observed_tags, expected_tags)>=0,1,0)
+| eval top_level_tag_observed=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
 | stats
-    min(expected_tag_match) as top_level_tag_observed
+    max(top_level_tag_observed) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
     by datamodel
