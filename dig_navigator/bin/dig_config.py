@@ -55,20 +55,30 @@ CIM_DATAMODEL_TAGS_SPL = r"""
 | fields title eai:data
 | spath input=eai:data path=objects{} output=object
 | mvexpand object
+| spath input=object path=objectName output=dataset
 | spath input=object path=parentName output=parent_dataset
 | spath input=object path=comment.tags{} output=object_tags
 | spath input=object path=constraints{}.search output=constraint_search
+| eval object_tags=mvmap(object_tags, lower(trim(object_tags)))
 | eval constraint_text=mvjoin(constraint_search, " ")
 | rex field=constraint_text max_match=0 "(?:^|\s)tag=(?<constraint_tags>[^\s\)]+)"
+| eval constraint_tags=mvmap(constraint_tags, lower(trim(constraint_tags)))
 | eval root_tags=if(parent_dataset="BaseEvent" OR isnull(parent_dataset) OR parent_dataset="", object_tags, null())
-| eval root_tags=if(isnotnull(root_tags), mvfilter(match(root_tags, "^[A-Za-z0-9_]+$")), root_tags)
-| eval root_tags=if(isnotnull(root_tags), mvfilter(root_tags!=lower(title)), root_tags)
+| eventstats values(root_tags) as top_level_tags by title
 | eval supporting_tags=if(isnotnull(parent_dataset) AND parent_dataset!="BaseEvent", object_tags, null())
 | eval datamodel=title
-| eval root_tags=if(isnotnull(root_tags), mvjoin(root_tags, ","), null())
+| stats
+    values(top_level_tags) as top_level_tags
+    values(supporting_tags) as supporting_tags
+    values(constraint_tags) as constraint_tags
+    by datamodel
+| eval top_level_tags=mvfilter(match(top_level_tags, "^[A-Za-z0-9_]+$"))
+| eval top_level_tags=mvfilter(top_level_tags!=lower(datamodel))
+| eval top_level_tags=if(isnotnull(top_level_tags), mvjoin(top_level_tags, ","), null())
 | eval supporting_tags=if(isnotnull(supporting_tags), mvjoin(supporting_tags, ","), null())
+| eval constraint_tags=if(isnotnull(constraint_tags), mvjoin(constraint_tags, ","), null())
 | eval tag_blob=mvappend(
-    if(isnotnull(root_tags) AND len(root_tags)>0, "top_level:" . root_tags, null()),
+    if(isnotnull(top_level_tags) AND len(top_level_tags)>0, "top_level:" . top_level_tags, null()),
     if(isnotnull(supporting_tags) AND len(supporting_tags)>0, "supporting:" . supporting_tags, null()),
     if(isnotnull(constraint_tags) AND len(constraint_tags)>0, "constraint:" . constraint_tags, null())
 )
