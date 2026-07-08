@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import time
 import traceback
 import urllib.error
@@ -18,6 +19,8 @@ CIM_DATAMODEL_TAGS_COLLECTION = "cim_datamodel_tags"
 SA_CIM_SOURCE = "sa_cim:/services/data/models"
 
 SEARCH_EXPORT_TIMEOUT = 180
+
+CIM_TAG_REGEX = r'tag="?([A-Za-z0-9_]+)"?'
 
 DATAMODEL_FIELDS_SPL = r"""
 | rest /services/data/models
@@ -59,23 +62,8 @@ CIM_DATAMODEL_TAGS_SPL = r"""
 | spath input=object path=parentName output=parent_dataset
 | spath input=object path=comment.tags{} output=object_tags
 | spath input=object path=constraints{}.search output=constraint_search
-| eval object_tags=mvmap(object_tags, lower(trim(object_tags)))
-| eval constraint_text=mvjoin(constraint_search, " ")
-| rex field=constraint_text max_match=0 "(?:^|\s)tag=(?<constraint_tags>[^\s\)]+)"
-| eval constraint_tags=mvmap(constraint_tags, lower(trim(constraint_tags)))
-| eval root_tags=if(parent_dataset="BaseEvent" OR isnull(parent_dataset) OR parent_dataset="", object_tags, null())
-| eventstats values(root_tags) as top_level_tags by title
-| eval supporting_tags=if(isnotnull(parent_dataset) AND parent_dataset!="BaseEvent", object_tags, null())
-| eval datamodel=title
-| stats
-    values(top_level_tags) as top_level_tags
-    values(supporting_tags) as supporting_tags
-    values(constraint_tags) as constraint_tags
-    by datamodel
-| eval top_level_tags=mvfilter(match(top_level_tags, "^[A-Za-z0-9_]+$"))
-| eval top_level_tags=mvfilter(top_level_tags!=lower(datamodel))
-| table datamodel top_level_tags supporting_tags constraint_tags
-| sort datamodel
+| table title dataset parent_dataset object_tags constraint_search
+| sort title dataset
 """.strip()
 
 
@@ -206,6 +194,31 @@ def as_scalar(value, default=""):
     return str(value).strip() or default
 
 
+def split_tag_values(value):
+    tags = []
+
+    if value is None:
+        return tags
+
+    raw_values = value if isinstance(value, list) else [value]
+    for raw in raw_values:
+        for chunk in str(raw).replace("\r", "\n").split("\n"):
+            for item in chunk.split(","):
+                candidate = item.strip().strip('"').strip("'").lower()
+                if candidate:
+                    tags.append(candidate)
+
+    return tags
+
+
+def extract_constraint_tags(value):
+    matches = []
+    raw_values = value if isinstance(value, list) else [value]
+    for raw in raw_values:
+        matches.extend(re.findall(CIM_TAG_REGEX, str(raw), flags=re.IGNORECASE))
+    return [match.strip().lower() for match in matches if match and match.strip()]
+
+
 def map_field_rows(result_rows, now):
     records = []
     seen = set()
@@ -256,38 +269,53 @@ def map_tag_rows(result_rows, now):
     records = []
     seen = set()
 
+    per_datamodel = {}
+
     for row in result_rows:
         datamodel = as_scalar(row.get("datamodel") or row.get("title"))
+        parent_dataset = as_scalar(row.get("parent_dataset"))
         if not datamodel:
             continue
 
-        role_map = {
-            "top_level": row.get("top_level_tags"),
-            "supporting": row.get("supporting_tags"),
-            "constraint": row.get("constraint_tags"),
-        }
+        tag_bucket = per_datamodel.setdefault(
+            datamodel,
+            {"top_level": set(), "supporting": set(), "constraint": set()},
+        )
 
-        for tag_role, raw_tags in role_map.items():
-            tags = []
-            if isinstance(raw_tags, list):
-                for item in raw_tags:
-                    if isinstance(item, list):
-                        tags.extend(item)
-                    else:
-                        tags.extend(str(item).split(","))
-            elif raw_tags is not None:
-                tags.extend(str(raw_tags).split(","))
+        object_tags = split_tag_values(row.get("object_tags"))
+        constraint_tags = extract_constraint_tags(row.get("constraint_search"))
 
-            for tag in tags:
-                expected_tag = str(tag).strip().lower()
+        if parent_dataset in ("", "BaseEvent"):
+            tag_bucket["top_level"].update(object_tags)
+        else:
+            tag_bucket["supporting"].update(object_tags)
+
+        tag_bucket["constraint"].update(constraint_tags)
+
+    for datamodel, role_map in per_datamodel.items():
+        datamodel_lower = datamodel.lower()
+
+        for expected_tag in sorted(role_map["top_level"]):
+            if re.match(r"^[a-z0-9_]+$", expected_tag) and expected_tag != datamodel_lower:
+                dedupe_key = (datamodel_lower, expected_tag, "top_level")
+                if dedupe_key not in seen:
+                    seen.add(dedupe_key)
+                    records.append({
+                        "_key": make_datamodel_tag_key(datamodel, expected_tag, "top_level"),
+                        "datamodel": datamodel,
+                        "expected_tag": expected_tag,
+                        "tag_role": "top_level",
+                        "updated_at": now,
+                    })
+
+        for tag_role in ("supporting", "constraint"):
+            for expected_tag in sorted(role_map[tag_role]):
                 if not expected_tag:
                     continue
-
-                dedupe_key = (datamodel.lower(), expected_tag, tag_role)
+                dedupe_key = (datamodel_lower, expected_tag, tag_role)
                 if dedupe_key in seen:
                     continue
                 seen.add(dedupe_key)
-
                 records.append({
                     "_key": make_datamodel_tag_key(datamodel, expected_tag, tag_role),
                     "datamodel": datamodel,
