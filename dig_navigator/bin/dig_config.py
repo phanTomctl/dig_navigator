@@ -62,6 +62,8 @@ CIM_DATAMODEL_TAGS_SPL = r"""
 | eval constraint_text=mvjoin(constraint_search, " ")
 | rex field=constraint_text max_match=0 "(?:^|\s)tag=(?<constraint_tags>[^\s\)]+)"
 | eval root_tags=if(parent_dataset="BaseEvent" OR isnull(parent_dataset) OR parent_dataset="", object_tags, null())
+| eval root_tags=if(isnotnull(root_tags), mvfilter(match(root_tags, "^[A-Za-z0-9_]+$")), root_tags)
+| eval root_tags=if(isnotnull(root_tags), mvfilter(root_tags!=lower(title)), root_tags)
 | eval supporting_tags=if(isnotnull(parent_dataset) AND parent_dataset!="BaseEvent", object_tags, null())
 | eval datamodel=title
 | eval tag_blob=mvappend(

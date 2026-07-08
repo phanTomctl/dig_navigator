@@ -172,6 +172,13 @@ $base_search$
         <search base="base_dm_field_matches">
           <query><![CDATA[
 | where field_scope_match=1
+| join type=left max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval field_name=lower(trim(field_name))
+    | stats dc(datamodel) as datamodel_match_count by field_name
+]
+| where coalesce(datamodel_match_count,0)<=2
 | stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags by datamodel
 | join type=left max=0 datamodel [
     | inputlookup datamodel_fields_lookup
@@ -202,9 +209,15 @@ $base_search$
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | where tag_role="top_level"
-    | fields datamodel_key expected_tag
+    | stats values(expected_tag) as expected_tags by datamodel_key
 ]
-| eval top_level_tag_observed=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval expected_tags=if(isnull(expected_tags), null(), mvmap(expected_tags, lower(trim(expected_tags))))
+| eval top_level_tag_observed=case(
+    isnull(expected_tags) OR mvcount(expected_tags)=0, 0,
+    mvcount(expected_tags)=1 AND mvfind(observed_tags, mvindex(expected_tags,0))>=0, 1,
+    mvcount(expected_tags)>1 AND mvcount(mvfilter(mvfind(observed_tags, expected_tags)>=0))=mvcount(expected_tags), 1,
+    true(), 0
+)
 | stats
     max(top_level_tag_observed) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
@@ -412,6 +425,7 @@ $base_search$
     | stats
         values(eval(if(tag_role="top_level",expected_tag,null()))) as top_level_tags
         values(eval(if(tag_role="supporting",expected_tag,null()))) as supporting_tags
+        values(eval(if(tag_role="constraint",expected_tag,null()))) as constraint_tags
         values(expected_tag) as expected_tags
         by datamodel_key
 ]
@@ -419,6 +433,7 @@ $base_search$
 | eval expected_tags=coalesce(expected_tags,"No expected tags mapped")
 | eval top_level_tags=coalesce(top_level_tags,"No top-level tags mapped")
 | eval supporting_tags=coalesce(supporting_tags,"No supporting tags mapped")
+| eval constraint_tags=coalesce(constraint_tags,"No constraint tags mapped")
 | eval observed_tags=coalesce(observed_tags,"No observed tags")
 | eval top_level_eval=top_level_tags
 | mvexpand top_level_eval
@@ -431,21 +446,24 @@ $base_search$
 | stats
     values(top_level_tags) as top_level_tags
     values(supporting_tags) as supporting_tags
+    values(constraint_tags) as constraint_tags
     values(observed_tags) as observed_tags
     values(top_level_tag_observed) as top_level_tag_observed
     max(matched_fields) as matched_fields
     by datamodel group_value
 | eval top_level_tags=mvjoin(mvsort(top_level_tags),", ")
 | eval supporting_tags=mvjoin(mvsort(supporting_tags),", ")
+| eval constraint_tags=mvjoin(mvsort(constraint_tags),", ")
 | eval observed_tags=mvjoin(mvsort(observed_tags),", ")
 | rename datamodel as Datamodel
 | rename group_value as "Data Source"
 | rename top_level_tags as "Top-Level Tags"
 | rename supporting_tags as "Supporting Tags"
+| rename constraint_tags as "Constraint Tags"
 | rename observed_tags as "Observed Tags"
 | rename top_level_tag_observed as "Top-Level Tag Observed"
 | rename matched_fields as "Matched Fields"
-| table Datamodel "Data Source" "Matched Fields" "Top-Level Tags" "Supporting Tags" "Observed Tags" "Top-Level Tag Observed"
+| table Datamodel "Data Source" "Matched Fields" "Top-Level Tags" "Supporting Tags" "Constraint Tags" "Observed Tags" "Top-Level Tag Observed"
 | sort Datamodel "Data Source"
           ]]></query>
         </search>
