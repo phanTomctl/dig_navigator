@@ -74,23 +74,8 @@ CIM_DATAMODEL_TAGS_SPL = r"""
     by datamodel
 | eval top_level_tags=mvfilter(match(top_level_tags, "^[A-Za-z0-9_]+$"))
 | eval top_level_tags=mvfilter(top_level_tags!=lower(datamodel))
-| eval top_level_tags=if(isnotnull(top_level_tags), mvjoin(top_level_tags, ","), null())
-| eval supporting_tags=if(isnotnull(supporting_tags), mvjoin(supporting_tags, ","), null())
-| eval constraint_tags=if(isnotnull(constraint_tags), mvjoin(constraint_tags, ","), null())
-| eval tag_blob=mvappend(
-    if(isnotnull(top_level_tags) AND len(top_level_tags)>0, "top_level:" . top_level_tags, null()),
-    if(isnotnull(supporting_tags) AND len(supporting_tags)>0, "supporting:" . supporting_tags, null()),
-    if(isnotnull(constraint_tags) AND len(constraint_tags)>0, "constraint:" . constraint_tags, null())
-)
-| mvexpand tag_blob
-| rex field=tag_blob "^(?<tag_role>[^:]+):(?<tag_csv>.*)$"
-| makemv delim="," tag_csv
-| mvexpand tag_csv
-| eval expected_tag=lower(trim(tag_csv))
-| where len(expected_tag)>0
-| dedup datamodel expected_tag tag_role
-| table datamodel expected_tag tag_role
-| sort datamodel tag_role expected_tag
+| table datamodel top_level_tags supporting_tags constraint_tags
+| sort datamodel
 """.strip()
 
 
@@ -273,24 +258,43 @@ def map_tag_rows(result_rows, now):
 
     for row in result_rows:
         datamodel = as_scalar(row.get("datamodel") or row.get("title"))
-        expected_tag = as_scalar(row.get("expected_tag")).lower()
-        tag_role = as_scalar(row.get("tag_role"), "supporting").lower()
-
-        if not datamodel or not expected_tag:
+        if not datamodel:
             continue
 
-        dedupe_key = (datamodel.lower(), expected_tag, tag_role)
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
+        role_map = {
+            "top_level": row.get("top_level_tags"),
+            "supporting": row.get("supporting_tags"),
+            "constraint": row.get("constraint_tags"),
+        }
 
-        records.append({
-            "_key": make_datamodel_tag_key(datamodel, expected_tag, tag_role),
-            "datamodel": datamodel,
-            "expected_tag": expected_tag,
-            "tag_role": tag_role,
-            "updated_at": now,
-        })
+        for tag_role, raw_tags in role_map.items():
+            tags = []
+            if isinstance(raw_tags, list):
+                for item in raw_tags:
+                    if isinstance(item, list):
+                        tags.extend(item)
+                    else:
+                        tags.extend(str(item).split(","))
+            elif raw_tags is not None:
+                tags.extend(str(raw_tags).split(","))
+
+            for tag in tags:
+                expected_tag = str(tag).strip().lower()
+                if not expected_tag:
+                    continue
+
+                dedupe_key = (datamodel.lower(), expected_tag, tag_role)
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+
+                records.append({
+                    "_key": make_datamodel_tag_key(datamodel, expected_tag, tag_role),
+                    "datamodel": datamodel,
+                    "expected_tag": expected_tag,
+                    "tag_role": tag_role,
+                    "updated_at": now,
+                })
 
     return records
 
