@@ -29,6 +29,13 @@
       <default>1000</default>
     </input>
 
+    <input type="dropdown" token="model_scope" searchWhenChanged="true">
+      <label>Reduction model</label>
+      <choice value="all">Keep all datamodel fields</choice>
+      <choice value="recommended">Keep recommended/model fields only</choice>
+      <default>recommended</default>
+    </input>
+
   </fieldset>
 
   <search id="base_sample">
@@ -37,6 +44,7 @@ $base_search$
 | head $sample_limit$
 | eval group_value=if("$group_by$"="source", source, sourcetype)
 | eval group_value=coalesce(group_value,"unknown")
+| fields group_value _raw _time _indextime index host source sourcetype tag *
     ]]></query>
     <earliest>$time_range.earliest$</earliest>
     <latest>$time_range.latest$</latest>
@@ -624,6 +632,8 @@ $base_search$
 | table datamodel "Current Alignment %" "Potential Alignment %"
 | sort - "Current Alignment %" - "Potential Alignment %" datamodel
           ]]></query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
 
         <option name="charting.chart">column</option>
@@ -745,13 +755,6 @@ $base_search$
           </details>
         </div>
       </html>
-
-      <input type="dropdown" token="model_scope" searchWhenChanged="true">
-        <label>Reduction model</label>
-        <choice value="all">Keep all datamodel fields</choice>
-        <choice value="recommended">Keep recommended/model fields only</choice>
-        <default>recommended</default>
-      </input>
 
     </panel>
   </row>
