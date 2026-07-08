@@ -1,0 +1,31 @@
+---
+description: Commit and push after each testable fix so the GitHub branch stays ready for Splunk deployment.
+alwaysApply: true
+---
+
+# Git commit workflow
+
+## When to commit
+
+Commit and push **immediately** after completing an update that requires testing or deployment validation. Do not leave testable app changes uncommitted while waiting for the user to ask.
+
+Examples that require an immediate commit+push:
+- Dashboard / Simple XML fixes
+- JavaScript / CSS / static asset changes
+- Python REST handlers or backend scripts
+- `.conf`, lookups, KV Store, metadata, or nav changes
+- Any other change the user needs to download from GitHub and test in Splunk
+
+Do **not** wait for an explicit "commit" request for those cases. Tell the user the commit hash and that it was pushed so they can deploy and test.
+
+Still only commit relevant app files. Never commit `.cursor/` unless the change is an intentional rule/config update the user asked for. Never commit `__pycache__/`, secrets, or `local/` overrides.
+
+## Commit + push steps
+
+1. Stage and commit the relevant files.
+2. **Always push** the current branch to `origin` immediately after a successful commit.
+3. Confirm both the commit hash and that the push succeeded.
+
+The user deploys by downloading from the GitHub branch, so a local-only commit is not sufficient.
+
+Do **not** merge into `main` unless the user explicitly asks for that or a PR merge.

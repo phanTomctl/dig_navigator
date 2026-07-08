@@ -106,6 +106,16 @@ require([
         return scope;
     }
 
+    function scopesEqual(left, right) {
+        left = normaliseScope(left);
+        right = normaliseScope(right);
+        return left.base_search === right.base_search &&
+            left.earliest === right.earliest &&
+            left.latest === right.latest &&
+            left.group_by === right.group_by &&
+            left.sample_limit === right.sample_limit;
+    }
+
     function getUrlScopeIfMeaningful() {
         var params = parseQuery();
         var baseSearch = getQueryValue(params, ["form.base_search", "base_search"]);
@@ -262,6 +272,20 @@ require([
         refreshSearches();
     }
 
+    function scheduleScopeReapply(scope, attemptsRemaining) {
+        if (!attemptsRemaining || attemptsRemaining < 1) {
+            return;
+        }
+
+        window.setTimeout(function() {
+            var current = readCurrentScope();
+            if (!scopesEqual(current, scope)) {
+                setScopeTokens(scope);
+            }
+            scheduleScopeReapply(scope, attemptsRemaining - 1);
+        }, 500);
+    }
+
     function updateVisibleInputs(scope) {
         getInputComponents().forEach(function(item) {
             try {
@@ -386,6 +410,7 @@ require([
             success: function(scope) {
                 scope = normaliseScope(scope);
                 setScopeTokens(scope);
+                scheduleScopeReapply(scope, 4);
                 if (scope && scope.is_default) {
                     updateStatus("Default safe scope loaded. Set a valid Analysis Scope and click Apply Scope.", false);
                 } else {
