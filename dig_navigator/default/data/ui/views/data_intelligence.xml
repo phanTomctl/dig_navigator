@@ -31,12 +31,19 @@
 
   </fieldset>
 
-  <search id="base_structure">
+  <search id="base_sample">
     <query><![CDATA[
 $base_search$
 | head $sample_limit$
 | eval group_value=if("$group_by$"="source", source, sourcetype)
 | eval group_value=coalesce(group_value,"unknown")
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_structure" base="base_sample">
+    <query><![CDATA[
 | eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
 | eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
 | eval json_payload=if(is_json=1,_raw,null())
@@ -94,30 +101,20 @@ $base_search$
 )
 | fields group_value event_count structure_ratio shape_ratio length_variance Classification Classification_Confidence
     ]]></query>
-    <earliest>$time_range.earliest$</earliest>
-    <latest>$time_range.latest$</latest>
   </search>
 
-  <search id="base_field_summary">
+  <search id="base_field_summary" base="base_sample">
     <query><![CDATA[
-$base_search$
-| head $sample_limit$
 | fieldsummary maxvals=0
 | rename field as field_name count as stream_field_count
 | eval field_name=lower(trim(field_name))
 | where NOT match(field_name,"^_")
 | fields field_name stream_field_count
     ]]></query>
-    <earliest>$time_range.earliest$</earliest>
-    <latest>$time_range.latest$</latest>
   </search>
 
-  <search id="base_field_reduction">
+  <search id="base_field_reduction" base="base_sample">
     <query><![CDATA[
-$base_search$
-| head $sample_limit$
-| eval group_value=if("$group_by$"="source", source, sourcetype)
-| eval group_value=coalesce(group_value,"unknown")
 | eventstats count as events_checked values(tag) as observed_tags by group_value
 | eval observed_tags_joined=mvjoin(observed_tags,"|||")
 | eval group_key=group_value . "###" . events_checked . "###" . observed_tags_joined
@@ -162,16 +159,10 @@ $base_search$
 | eval would_drop=if(keep_field=1,0,1)
 | fields group_value field_name field_instances events_checked observed_tags in_datamodel model_field keep_field would_drop datamodels
     ]]></query>
-    <earliest>$time_range.earliest$</earliest>
-    <latest>$time_range.latest$</latest>
   </search>
 
-  <search id="base_timeliness_evidence">
+  <search id="base_timeliness_evidence" base="base_sample">
     <query><![CDATA[
-$base_search$
-| head $sample_limit$
-| eval group_value=if("$group_by$"="source", source, sourcetype)
-| eval group_value=coalesce(group_value,"unknown")
 | eval event_time=_time
 | eval index_time=_indextime
 | eval ingest_delay_seconds=index_time-event_time
@@ -232,8 +223,6 @@ $base_search$
 | eval raw_preview=if(len(_raw)>500, substr(_raw,1,500) . " ... [TRUNCATED]", _raw)
 | fields _time event_time index_time event_time_readable index_time_readable index host source sourcetype group_value ingest_delay_seconds ingest_delay_display delay_category timestamp_indicator healthy_seconds warning_seconds poor_seconds healthy_display warning_display poor_display old_event_seconds future_skew_seconds timeliness_rule_source expected_range timeliness_rule_note raw_preview _raw
     ]]></query>
-    <earliest>$time_range.earliest$</earliest>
-    <latest>$time_range.latest$</latest>
   </search>
 
 
@@ -535,12 +524,8 @@ $base_search$
       </input>
 
       <chart>
-        <search>
+        <search base="base_sample">
           <query><![CDATA[
-$base_search$
-| head $sample_limit$
-| eval group_value=if("$group_by$"="source", source, sourcetype)
-| eval group_value=coalesce(group_value,"unknown")
 | eventstats values(tag) as scope_observed_tags
 | fields scope_observed_tags *
 | fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
@@ -639,8 +624,6 @@ $base_search$
 | table datamodel "Current Alignment %" "Potential Alignment %"
 | sort - "Current Alignment %" - "Potential Alignment %" datamodel
           ]]></query>
-          <earliest>$time_range.earliest$</earliest>
-          <latest>$time_range.latest$</latest>
         </search>
 
         <option name="charting.chart">column</option>
