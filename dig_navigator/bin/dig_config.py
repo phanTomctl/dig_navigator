@@ -58,7 +58,6 @@ CIM_DATAMODEL_TAGS_SPL = r"""
 | spath input=object path=parentName output=parent_dataset
 | spath input=object path=comment.tags{} output=object_tags
 | spath input=object path=constraints{}.search output=constraint_search
-| eval object_tags=mvjoin(object_tags, ",")
 | eval constraint_text=mvjoin(constraint_search, " ")
 | rex field=constraint_text max_match=0 "(?:^|\s)tag=(?<constraint_tags>[^\s\)]+)"
 | eval root_tags=if(parent_dataset="BaseEvent" OR isnull(parent_dataset) OR parent_dataset="", object_tags, null())
@@ -66,6 +65,8 @@ CIM_DATAMODEL_TAGS_SPL = r"""
 | eval root_tags=if(isnotnull(root_tags), mvfilter(root_tags!=lower(title)), root_tags)
 | eval supporting_tags=if(isnotnull(parent_dataset) AND parent_dataset!="BaseEvent", object_tags, null())
 | eval datamodel=title
+| eval root_tags=if(isnotnull(root_tags), mvjoin(root_tags, ","), null())
+| eval supporting_tags=if(isnotnull(supporting_tags), mvjoin(supporting_tags, ","), null())
 | eval tag_blob=mvappend(
     if(isnotnull(root_tags) AND len(root_tags)>0, "top_level:" . root_tags, null()),
     if(isnotnull(supporting_tags) AND len(supporting_tags)>0, "supporting:" . supporting_tags, null()),
