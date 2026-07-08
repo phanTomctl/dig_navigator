@@ -8,8 +8,11 @@
  * Design notes:
  * - No dependency on splunkjs/mvc/simplexml/submit; that module is not present in
  *   some Splunk 10 builds and can break dashboard loading.
- * - URL/drilldown tokens override saved KV scope only when they differ from the
- *   safe dashboard defaults.
+ * - Shared form.* scope tokens alone are NOT treated as drilldown overrides.
+ *   Splunk SimpleXML often rewrites them into the URL after Apply Scope; that must
+ *   still auto-load the saved per-user KV scope.
+ * - URL scope overrides KV only when DIG IN drilldown context tokens are present
+ *   (selected_group, classification, delay/timestamp selectors, etc.).
  * - Scope is applied to default and submitted token models, then searches are
  *   restarted defensively for direct dashboard opens.
  */
@@ -116,32 +119,44 @@ require([
             left.sample_limit === right.sample_limit;
     }
 
+    function hasDrilldownContext(params) {
+        // Markers that appear on DIG IN drilldown target URLs. Shared Analysis Scope
+        // tokens (base_search/time/group_by/sample_limit) alone are not enough —
+        // SimpleXML often persists those into the address bar after Apply Scope.
+        var markers = [
+            "form.selected_group", "selected_group",
+            "form.classification", "classification",
+            "form.selected_delay_category", "selected_delay_category",
+            "form.selected_timestamp_indicator", "selected_timestamp_indicator",
+            "form.framework_filter", "framework_filter",
+            "form.capability_filter", "capability_filter",
+            "form.coverage_filter", "coverage_filter",
+            "form.governance_relevance_filter", "governance_relevance_filter",
+            "form.tier_filter", "tier_filter",
+            "form.retention_filter", "retention_filter"
+        ];
+
+        for (var i = 0; i < markers.length; i++) {
+            if (Object.prototype.hasOwnProperty.call(params, markers[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function getUrlScopeIfMeaningful() {
         var params = parseQuery();
+        if (!hasDrilldownContext(params)) {
+            return null;
+        }
+
         var baseSearch = getQueryValue(params, ["form.base_search", "base_search"]);
         var earliest = getQueryValue(params, ["form.time_range.earliest", "time_range.earliest", "earliest"]);
         var latest = getQueryValue(params, ["form.time_range.latest", "time_range.latest", "latest"]);
         var groupBy = getQueryValue(params, ["form.group_by", "group_by"]);
         var sampleLimit = getQueryValue(params, ["form.sample_limit", "sample_limit"]);
 
-        var meaningful = false;
-        if (baseSearch && baseSearch !== DEFAULT_SCOPE.base_search) {
-            meaningful = true;
-        }
-        if (earliest && earliest !== DEFAULT_SCOPE.earliest) {
-            meaningful = true;
-        }
-        if (latest && latest !== DEFAULT_SCOPE.latest) {
-            meaningful = true;
-        }
-        if (groupBy && groupBy !== DEFAULT_SCOPE.group_by) {
-            meaningful = true;
-        }
-        if (sampleLimit && normaliseLimit(sampleLimit) !== DEFAULT_SCOPE.sample_limit) {
-            meaningful = true;
-        }
-
-        if (!meaningful) {
+        if (!baseSearch && !earliest && !latest && !groupBy && !sampleLimit) {
             return null;
         }
 
