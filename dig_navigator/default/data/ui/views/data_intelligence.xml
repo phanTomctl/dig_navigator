@@ -621,15 +621,11 @@ $base_search$
     | where tag_role="top_level"
     | stats values(expected_tag) as expected_tags by datamodel_key
 ]
-| eval expected_tags=if(isnull(expected_tags), null(), mvmap(expected_tags, lower(trim(expected_tags))))
-| eval top_level_tag_observed=case(
-    isnull(expected_tags) OR mvcount(expected_tags)=0, 0,
-    mvcount(expected_tags)=1 AND mvfind(observed_tags, mvindex(expected_tags,0))>=0, 1,
-    mvcount(expected_tags)>1 AND mvcount(mvfilter(mvfind(observed_tags, expected_tags)>=0))=mvcount(expected_tags), 1,
-    true(), 0
-)
+| eval expected_tags=if(isnull(expected_tags),"__no_expected_tag__",mvmap(expected_tags, lower(trim(expected_tags))))
+| mvexpand expected_tags
+| eval expected_tag_match=if(expected_tags!="__no_expected_tag__" AND mvfind(observed_tags, expected_tags)>=0,1,0)
 | stats
-    max(top_level_tag_observed) as top_level_tag_observed
+    min(expected_tag_match) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
     by datamodel
