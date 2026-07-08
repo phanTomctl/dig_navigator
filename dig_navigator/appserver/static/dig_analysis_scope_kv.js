@@ -26,7 +26,7 @@ require([
         earliest: "-24h",
         latest: "now",
         group_by: "sourcetype",
-        sample_limit: "5000"
+        sample_limit: "1000"
     };
 
     var MAX_SAMPLE_LIMIT = 100000;
