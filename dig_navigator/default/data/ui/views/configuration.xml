@@ -49,7 +49,7 @@
         <search>
           <query>
             | inputlookup datamodel_fields_lookup
-            | table datamodel field_name notes recommended source_url updated_at
+            | table datamodel field_name notes recommended field_status updated_at
           </query>
         </search>
       </table>

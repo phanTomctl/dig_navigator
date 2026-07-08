@@ -15,7 +15,7 @@ APP_NAME = "dig_navigator"
 
 DATAMODEL_FIELDS_COLLECTION = "datamodel_fields"
 CIM_DATAMODEL_TAGS_COLLECTION = "cim_datamodel_tags"
-SA_CIM_SOURCE_URL = "sa_cim:/services/data/models"
+SA_CIM_SOURCE = "sa_cim:/services/data/models"
 
 SEARCH_EXPORT_TIMEOUT = 180
 
@@ -222,7 +222,6 @@ def map_field_rows(result_rows, now):
             "field_name": field_name,
             "table_index": 1,
             "notes": notes,
-            "source_url": SA_CIM_SOURCE_URL,
             "field_status": field_status,
             "recommended": recommended,
             "required": required,
@@ -368,7 +367,7 @@ def build_datamodel_fields_from_cim(session_key):
             "status": "error",
             "records_written": 0,
             "records_deleted": 0,
-            "source": SA_CIM_SOURCE_URL,
+            "source": SA_CIM_SOURCE,
             "errors": [{"error": f"SA_CIM field metadata search failed: {body}"}],
         }
     except Exception as e:
@@ -376,7 +375,7 @@ def build_datamodel_fields_from_cim(session_key):
             "status": "error",
             "records_written": 0,
             "records_deleted": 0,
-            "source": SA_CIM_SOURCE_URL,
+            "source": SA_CIM_SOURCE,
             "errors": [{"error": str(e)}],
         }
 
@@ -408,7 +407,7 @@ def build_datamodel_fields_from_cim(session_key):
         "records_written": len(records),
         "records_deleted": clear_result.get("records_deleted", 0),
         "datamodels_checked": datamodels_checked,
-        "source": SA_CIM_SOURCE_URL,
+        "source": SA_CIM_SOURCE,
         "errors": errors,
     }
 
@@ -426,7 +425,7 @@ def build_cim_datamodel_tags(session_key):
             "status": "error",
             "records_written": 0,
             "records_deleted": 0,
-            "source": SA_CIM_SOURCE_URL,
+            "source": SA_CIM_SOURCE,
             "errors": [{"error": f"SA_CIM tag metadata search failed: {body}"}],
         }
     except Exception as e:
@@ -434,7 +433,7 @@ def build_cim_datamodel_tags(session_key):
             "status": "error",
             "records_written": 0,
             "records_deleted": 0,
-            "source": SA_CIM_SOURCE_URL,
+            "source": SA_CIM_SOURCE,
             "errors": [{"error": str(e)}],
         }
 
@@ -466,7 +465,7 @@ def build_cim_datamodel_tags(session_key):
         "records_written": len(records),
         "records_deleted": clear_result.get("records_deleted", 0),
         "datamodels_checked": datamodels_checked,
-        "source": SA_CIM_SOURCE_URL,
+        "source": SA_CIM_SOURCE,
         "errors": errors,
     }
 
@@ -501,7 +500,7 @@ class DIGConfig(BaseRestHandler):
                 "build_tags",
                 "run_all",
             ],
-            "source": SA_CIM_SOURCE_URL,
+            "source": SA_CIM_SOURCE,
         }))
 
     def handle_POST(self):
