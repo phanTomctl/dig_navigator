@@ -417,7 +417,11 @@ $base_search$
 | stats dc(field_name) as matched_fields values(observed_tags) as observed_tags by datamodel datamodel_key group_value
 | join type=left max=0 datamodel_key [
     | inputlookup cim_datamodel_tags_lookup
-    | eval datamodel_key=trim(datamodel)
+    | eval datamodel_key=case(
+        lower(datamodel)="inventory","Compute_Inventory",
+        lower(datamodel)="java virtual machines","JVM",
+        true(),replace(datamodel," ","_")
+      )
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | stats
