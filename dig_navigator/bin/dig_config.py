@@ -43,11 +43,10 @@ DATAMODEL_FIELDS_SPL = r"""
 | stats
     max(required) as required
     max(recommended) as recommended
-    values(notes) as notes
-    values(dataset) as datasets
+    first(notes) as notes
     by datamodel field_name
 | eval field_status=case(required="true","required", recommended="true","recommended", true(),"optional")
-| table datamodel field_name field_status recommended required notes datasets
+| table datamodel field_name field_status recommended required notes
 | sort datamodel field_name
 """.strip()
 
@@ -189,22 +188,45 @@ def run_spl_search(session_key, spl, timeout=SEARCH_EXPORT_TIMEOUT):
 
 
 def as_bool(value):
+    if isinstance(value, list):
+        value = value[0] if value else False
     return str(value).strip().lower() in ("1", "true", "yes")
+
+
+def as_scalar(value, default=""):
+    """
+    Flatten export/search values into a single KV-safe scalar.
+
+    Search export can return lists for multivalue fields such as
+    values(notes).
+    """
+    if value is None:
+        return default
+    if isinstance(value, list):
+        parts = [str(item).strip() for item in value if item is not None and str(item).strip()]
+        return " | ".join(parts) if parts else default
+    return str(value).strip() or default
 
 
 def map_field_rows(result_rows, now):
     records = []
+    seen = set()
 
     for row in result_rows:
-        datamodel = str(row.get("datamodel") or row.get("title") or "").strip()
-        field_name = str(row.get("field_name") or "").strip()
+        datamodel = as_scalar(row.get("datamodel") or row.get("title"))
+        field_name = as_scalar(row.get("field_name"))
 
         if not datamodel or not field_name:
             continue
 
+        dedupe_key = (datamodel.lower(), field_name.lower())
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
         recommended = as_bool(row.get("recommended"))
         required = as_bool(row.get("required"))
-        field_status = str(row.get("field_status") or "").strip()
+        field_status = as_scalar(row.get("field_status"))
 
         if not field_status:
             if required:
@@ -214,7 +236,7 @@ def map_field_rows(result_rows, now):
             else:
                 field_status = "optional"
 
-        notes = str(row.get("notes") or row.get("description") or "").strip()
+        notes = as_scalar(row.get("notes") or row.get("description"))
 
         records.append({
             "_key": make_datamodel_field_key(datamodel, field_name),
@@ -237,9 +259,9 @@ def map_tag_rows(result_rows, now):
     seen = set()
 
     for row in result_rows:
-        datamodel = str(row.get("datamodel") or row.get("title") or "").strip()
-        expected_tag = str(row.get("expected_tag") or "").strip().lower()
-        tag_role = str(row.get("tag_role") or "supporting").strip().lower()
+        datamodel = as_scalar(row.get("datamodel") or row.get("title"))
+        expected_tag = as_scalar(row.get("expected_tag")).lower()
+        tag_role = as_scalar(row.get("tag_role"), "supporting").lower()
 
         if not datamodel or not expected_tag:
             continue
@@ -260,11 +282,12 @@ def map_tag_rows(result_rows, now):
     return records
 
 
-def write_records_to_kvstore(session_key, collection_name, records):
+def write_records_to_kvstore(session_key, collection_name, records, batch_size=500):
     if not records:
         return {
             "collection": collection_name,
             "attempted_records": 0,
+            "batches": 0,
             "response": None,
         }
 
@@ -273,16 +296,35 @@ def write_records_to_kvstore(session_key, collection_name, records):
         f"/storage/collections/data/{collection_name}/batch_save"
     )
 
-    splunkd_json_request(
-        session_key=session_key,
-        uri=uri,
-        method="POST",
-        payload=records,
-    )
+    batches = 0
+    for start in range(0, len(records), batch_size):
+        chunk = records[start:start + batch_size]
+        try:
+            splunkd_json_request(
+                session_key=session_key,
+                uri=uri,
+                method="POST",
+                payload=chunk,
+            )
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
+            raise RuntimeError(
+                "KV Store batch_save failed for %s (batch %s, records %s-%s): %s %s"
+                % (
+                    collection_name,
+                    batches + 1,
+                    start + 1,
+                    start + len(chunk),
+                    e.code,
+                    body,
+                )
+            ) from e
+        batches += 1
 
     return {
         "collection": collection_name,
         "attempted_records": len(records),
+        "batches": batches,
     }
 
 
