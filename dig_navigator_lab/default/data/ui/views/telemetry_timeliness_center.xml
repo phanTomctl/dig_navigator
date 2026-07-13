@@ -156,7 +156,7 @@ $base_search$
     <panel>
       <html>
         <div class="devnull-hero">
-          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
+          <img class="devnull-logo" src="/static/app/dig_navigator_lab/devnull-logo.svg" />
           <div>
             <div class="devnull-title">Telemetry Delivery Information Nexus</div>
             <div class="devnull-subtitle">

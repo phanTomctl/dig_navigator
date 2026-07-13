@@ -30,7 +30,7 @@ require([
     };
 
     var MAX_SAMPLE_LIMIT = 100000;
-    var endpoint = makeUrl("/splunkd/__raw/servicesNS/nobody/dig_navigator/analysis_scope?output_mode=json");
+    var endpoint = makeUrl("/splunkd/__raw/servicesNS/nobody/dig_navigator_lab/analysis_scope?output_mode=json");
     var defaultTokens = mvc.Components.get("default");
     var submittedTokens = mvc.Components.get("submitted");
 

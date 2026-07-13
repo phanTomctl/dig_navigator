@@ -7,7 +7,7 @@ require([
     console.log("dig_config.js loaded");
 
     const endpoint = Splunk.util.make_url(
-        "/splunkd/__raw/servicesNS/nobody/dig_navigator/dig_config"
+        "/splunkd/__raw/servicesNS/nobody/dig_navigator_lab/dig_config"
     );
 
     function runAction(buttonId, statusId, action, runningText) {
@@ -39,17 +39,17 @@ require([
 
     $(document).on("click", "#run_scrape_btn", function(e) {
         e.preventDefault();
-        runAction("#run_scrape_btn", "#scrape_status", "scrape_fields", "Refreshing field metadata...");
+        runAction("#run_scrape_btn", "#scrape_status", "scrape_fields", "Building field metadata...");
     });
 
     $(document).on("click", "#build_tags_btn", function(e) {
         e.preventDefault();
-        runAction("#build_tags_btn", "#tag_status", "build_tags", "Refreshing datamodel tag mappings...");
+        runAction("#build_tags_btn", "#tag_status", "build_tags", "Building tag metadata...");
     });
 
     $(document).on("click", "#run_all_btn", function(e) {
         e.preventDefault();
-        runAction("#run_all_btn", "#run_all_status", "run_all", "Refreshing DIG configuration...");
+        runAction("#run_all_btn", "#run_all_status", "run_all", "Building field and tag metadata...");
     });
 
 });
