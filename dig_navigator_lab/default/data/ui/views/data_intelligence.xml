@@ -32,7 +32,7 @@
     <input type="dropdown" token="model_scope" searchWhenChanged="true">
       <label>Reduction model</label>
       <choice value="all">Keep all datamodel fields</choice>
-      <choice value="recommended">Keep recommended/model fields only</choice>
+      <choice value="recommended">Keep recommended fields only</choice>
       <default>recommended</default>
     </input>
 
@@ -279,13 +279,23 @@ $base_search$
     | rename field as field_name
     | eval field_name=lower(trim(field_name))
     | where NOT match(field_name,"^_")
+    | where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint)$")
     | stats dc(field_name) as current_fields
-    | join type=inner max=0 field_name [
-        | inputlookup datamodel_fields_lookup
+    | appendcols [
+        search $base_search$
+        | head $sample_limit$
+        | fieldsummary maxvals=1
+        | rename field as field_name
         | eval field_name=lower(trim(field_name))
-        | fields field_name
+        | where NOT match(field_name,"^_")
+        | where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint)$")
+        | join type=inner max=0 field_name [
+            | inputlookup datamodel_fields_lookup
+            | eval field_name=lower(trim(field_name))
+            | fields field_name
+        ]
+        | stats dc(field_name) as matched_dm_fields
     ]
-    | stats dc(field_name) as matched_dm_fields
     | eval "CIM Alignment"=round(if(current_fields>0,(matched_dm_fields/current_fields)*100,0),0)
     | fields "CIM Alignment"
 ]
@@ -493,7 +503,7 @@ $base_search$
             <div class="context-panel">
             <p><strong>What this shows:</strong> Current datamodel alignment and potential alignment opportunities for Splunk CIM datamodels.</p>
             <p><strong>Why it matters:</strong> Current alignment shows datamodel field coverage where the expected top-level CIM tag is observed. Potential alignment shows field coverage for datamodels where matching fields exist but the top-level tag is not observed.</p>
-            <p><strong>Read it as:</strong> Use Field scope to compare required/recommended fields or all datamodel fields. Use the Data Readiness IN drilldown for the field and tag evidence behind each result.</p>
+            <p><strong>Read it as:</strong> Use Field scope to compare recommended fields or all datamodel fields. Use the Data Readiness IN drilldown for the field and tag evidence behind each result.</p>
           </div>
           </details>
         </div>
@@ -519,7 +529,7 @@ $base_search$
 
       <input type="dropdown" token="field_scope" searchWhenChanged="true">
         <label>Field scope</label>
-        <choice value="recommended">Required / recommended fields</choice>
+        <choice value="recommended">Recommended fields</choice>
         <choice value="all">All datamodel fields</choice>
         <default>recommended</default>
       </input>

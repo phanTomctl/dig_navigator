@@ -61,7 +61,7 @@ $base_search$
 
     <input type="dropdown" token="field_scope" searchWhenChanged="true">
       <label>Field scope</label>
-      <choice value="recommended">Required / recommended fields</choice>
+      <choice value="recommended">Recommended fields</choice>
       <choice value="all">All datamodel fields</choice>
       <default>recommended</default>
     </input>

@@ -22,14 +22,48 @@ SEARCH_EXPORT_TIMEOUT = 180
 
 CIM_TAG_REGEX = r'tag="?([A-Za-z0-9_]+)"?'
 
-DATAMODEL_FIELDS_SPL = r"""
+# Only ingest datamodels owned by the CIM add-on.
+SA_CIM_APPS = {"Splunk_SA_CIM", "SA_CIM"}
+
+# Legacy peer models and Splunk-internal models are excluded entirely.
+EXCLUDED_DATAMODELS = {
+    "application_state",
+    "change_analysis",
+    "splunk_cim_validation",
+}
+EXCLUDED_DATAMODEL_PREFIXES = ("splunk_", "internal_")
+
+# Default Splunk metadata must not inflate CIM field matching.
+METADATA_FIELD_NAMES = {
+    "host",
+    "source",
+    "sourcetype",
+    "index",
+    "splunk_server",
+    "splunk_server_group",
+    "linecount",
+    "punct",
+    "eventtype",
+    "constraint",
+}
+
+SA_CIM_MODEL_FILTER_SPL = r"""
+| rename "eai:acl.app" as app
+| where app="Splunk_SA_CIM" OR app="SA_CIM"
+| eval dm_lower=lower(title)
+| where NOT match(dm_lower, "^(application_state|change_analysis|splunk_cim_validation)$")
+| where NOT match(dm_lower, "^(splunk_|internal_)")
+""".strip()
+
+DATAMODEL_FIELDS_SPL = rf"""
 | rest /services/data/models
-| fields title eai:data
-| spath input=eai:data path=objects{} output=object
+| fields title eai:acl.app eai:data
+{SA_CIM_MODEL_FILTER_SPL}
+| spath input=eai:data path=objects{{}} output=object
 | mvexpand object
 | spath input=object path=objectName output=dataset
-| spath input=object path=fields{} output=normal_fields
-| spath input=object path=calculations{}.outputFields{} output=calc_fields
+| spath input=object path=fields{{}} output=normal_fields
+| spath input=object path=calculations{{}}.outputFields{{}} output=calc_fields
 | eval field_json=mvappend(normal_fields, calc_fields)
 | mvexpand field_json
 | spath input=field_json path=fieldName output=field_name
@@ -38,6 +72,9 @@ DATAMODEL_FIELDS_SPL = r"""
 | spath input=field_json path=required output=required
 | spath input=field_json path=hidden output=hidden
 | where isnotnull(field_name) AND field_name!="" AND (hidden!="true" OR isnull(hidden))
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name, "^_")
+| where NOT match(field_name, "^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint)$")
 | eval datamodel=title
 | eval notes=description
 | eval recommended=if(recommended="true" OR recommended=1,1,0)
@@ -64,18 +101,37 @@ DATAMODEL_FIELDS_SPL = r"""
 | sort datamodel field_name
 """.strip()
 
-CIM_DATAMODEL_TAGS_SPL = r"""
+CIM_DATAMODEL_TAGS_SPL = rf"""
 | rest /services/data/models
-| fields title eai:data
-| spath input=eai:data path=objects{} output=object
+| fields title eai:acl.app eai:data
+{SA_CIM_MODEL_FILTER_SPL}
+| spath input=eai:data path=objects{{}} output=object
 | mvexpand object
 | spath input=object path=objectName output=dataset
 | spath input=object path=parentName output=parent_dataset
-| spath input=object path=comment.tags{} output=object_tags
-| spath input=object path=constraints{}.search output=constraint_search
+| spath input=object path=comment.tags{{}} output=object_tags
+| spath input=object path=constraints{{}}.search output=constraint_search
 | table title dataset parent_dataset object_tags constraint_search
 | sort title dataset
 """.strip()
+
+
+def is_allowed_datamodel(datamodel):
+    if not datamodel:
+        return False
+    dm_lower = datamodel.strip().lower()
+    if dm_lower in EXCLUDED_DATAMODELS:
+        return False
+    if dm_lower.startswith(EXCLUDED_DATAMODEL_PREFIXES):
+        return False
+    return True
+
+
+def is_metadata_field(field_name):
+    if not field_name:
+        return True
+    fn = field_name.strip().lower()
+    return fn.startswith("_") or fn in METADATA_FIELD_NAMES
 
 
 def make_datamodel_field_key(datamodel, field_name):
@@ -240,8 +296,13 @@ def map_field_rows(result_rows, now):
 
         if not datamodel or not field_name:
             continue
+        if not is_allowed_datamodel(datamodel):
+            continue
+        if is_metadata_field(field_name):
+            continue
 
-        dedupe_key = (datamodel.lower(), field_name.lower())
+        field_name = field_name.strip().lower()
+        dedupe_key = (datamodel.lower(), field_name)
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
@@ -287,6 +348,8 @@ def map_tag_rows(result_rows, now):
         datamodel = as_scalar(row.get("datamodel") or row.get("title"))
         parent_dataset = as_scalar(row.get("parent_dataset"))
         if not datamodel:
+            continue
+        if not is_allowed_datamodel(datamodel):
             continue
 
         tag_bucket = per_datamodel.setdefault(
