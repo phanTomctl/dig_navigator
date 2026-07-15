@@ -172,13 +172,6 @@ $base_search$
         <search base="base_dm_field_matches">
           <query><![CDATA[
 | where field_scope_match=1
-| join type=left max=0 field_name [
-    | inputlookup datamodel_fields_lookup
-    | eval datamodel=trim(datamodel)
-    | eval field_name=lower(trim(field_name))
-    | stats dc(datamodel) as datamodel_match_count by field_name
-]
-| where coalesce(datamodel_match_count,0)<=2
 | stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags by datamodel
 | join type=left max=0 datamodel [
     | inputlookup datamodel_fields_lookup

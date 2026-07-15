@@ -552,24 +552,6 @@ $base_search$
 | eval field_name=lower(trim(field_name))
 | where NOT match(field_name,"^_")
 | where field_name!="scope_observed_tags"
-| join type=left max=0 field_name [
-    | inputlookup datamodel_fields_lookup
-    | eval datamodel=trim(datamodel)
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval field_name=lower(trim(field_name))
-    | eval recommended=if(recommended="true" OR recommended=1,1,0)
-    | eval required=if(required="true" OR required=1,1,0)
-    | eval scope_field=case(
-        "$field_scope$"="all",1,
-        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
-        true(),0
-      )
-    | where scope_field=1
-    | stats dc(datamodel) as datamodel_match_count by field_name
-]
-| where coalesce(datamodel_match_count,0)<=2
 | stats count as field_instances values(scope_observed_tags) as observed_tags by field_name
 | join type=inner max=0 field_name [
     | inputlookup datamodel_fields_lookup
