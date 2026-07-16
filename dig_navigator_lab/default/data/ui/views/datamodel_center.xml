@@ -92,15 +92,22 @@ $base_search$
 | eval selected_group_wrapped="|" . selected_group . "|"
 | where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
 | eventstats values(tag) as observed_tags count as event_count by group_value
-| fields group_value observed_tags event_count *
-| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
-| untable group_value field_name field_value
+| eval observed_tags_joined=mvjoin(observed_tags,"|||")
+| eval group_key=group_value . "###" . event_count . "###" . observed_tags_joined
+| fields group_key *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group observed_tags event_count group_value
+| untable group_key field_name field_value
 | where isnotnull(field_value)
+| rex field=group_key "^(?<group_value>.*?)###(?<event_count>\d+)###(?<observed_tags_joined>.*)$"
+| eval observed_tags=split(observed_tags_joined,"|||")
+| eval event_count=tonumber(event_count)
 | eval field_name=lower(trim(field_name))
 | where NOT match(field_name,"^_")
 | where field_name!="group_value"
 | where field_name!="observed_tags"
 | where field_name!="event_count"
+| where field_name!="observed_tags_joined"
+| where field_name!="group_key"
 | stats count as field_instances values(observed_tags) as observed_tags max(event_count) as event_count by group_value field_name
 | join type=inner max=0 field_name [
     | inputlookup datamodel_fields_lookup
