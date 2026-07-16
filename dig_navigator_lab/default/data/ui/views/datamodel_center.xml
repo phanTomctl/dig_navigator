@@ -325,7 +325,7 @@ $base_search$
             <div class="context-panel">
               <p><strong>What this shows:</strong> The fields observed in the data that match selected datamodel definitions.</p>
               <p><strong>How to use it:</strong> Use this as the evidence trail for why a datamodel was considered relevant.</p>
-              <p><strong>Read it as:</strong> Fields marked required or recommended are usually stronger evidence than optional fields. Description text comes from the CIM field notes in the datamodel metadata.</p>
+              <p><strong>Read it as:</strong> Fields marked required or recommended are usually stronger evidence than optional fields.</p>
             </div>
           </details>
         </div>
@@ -341,14 +341,12 @@ $base_search$
     values(notes) as notes
     by datamodel field_name group_value
 | eval field_importance=case(required=1,"Required", recommended=1,"Recommended", true(),"Optional")
-| eval notes=mvjoin(mvdedup(notes), " ")
 | rename group_value as "Data Source"
 | rename datamodel as Datamodel
 | rename field_name as Field
-| rename notes as Description
 | rename field_instances as "Field Instances"
 | rename field_importance as "Field Importance"
-| table Datamodel "Data Source" Field Description "Field Importance" "Field Instances"
+| table Datamodel "Data Source" Field "Field Importance" "Field Instances"
 | sort Datamodel "Data Source" "Field Importance" - "Field Instances" Field
           ]]></query>
         </search>
@@ -358,14 +356,14 @@ $base_search$
 
   <row>
     <panel>
-      <title>Missing Datamodel Fields</title>
+      <title>Missing Required / Recommended Fields</title>
       <html>
         <div class="context-toggle">
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Datamodel fields in the selected field scope that were not observed in the selected data sample.</p>
-              <p><strong>How to use it:</strong> Use Field scope (Recommended fields vs All datamodel fields) to control which missing fields appear, then use this list to guide onboarding and extraction discussions.</p>
+              <p><strong>What this shows:</strong> Required or recommended datamodel fields that were not observed in the selected data sample.</p>
+              <p><strong>How to use it:</strong> Use this to guide onboarding discussions and to understand what may be limiting CIM/datamodel usefulness.</p>
               <p><strong>Read it as:</strong> A missing field does not always mean the data is bad. It may mean the field is not applicable, not extracted, or absent in the sample period.</p>
             </div>
           </details>
@@ -388,33 +386,19 @@ $base_search$
         | eval field_name=lower(trim(field_name))
         | eval recommended=if(recommended="true" OR recommended=1,1,0)
         | eval required=if(required="true" OR required=1,1,0)
-        | eval model_field=if(recommended=1 OR required=1,1,0)
-        | eval field_scope_match=case(
-            "$field_scope$"="all",1,
-            "$field_scope$"="recommended" AND model_field=1,1,
-            true(),0
-          )
-        | where field_scope_match=1
-        | fields datamodel field_name field_status recommended required notes
+        | where recommended=1 OR required=1
+        | fields datamodel field_name field_status recommended required
     ]
     | eval matched=0
 ]
-| stats
-    max(matched) as matched
-    values(field_status) as field_status
-    max(recommended) as recommended
-    max(required) as required
-    values(notes) as notes
-    by datamodel group_value field_name
+| stats max(matched) as matched values(field_status) as field_status max(recommended) as recommended max(required) as required values(notes) as notes by datamodel group_value field_name
 | where matched=0
 | eval field_importance=case(required=1,"Required", recommended=1,"Recommended", true(),"Optional")
-| eval notes=mvjoin(mvdedup(notes), " ")
 | rename datamodel as Datamodel
 | rename group_value as "Data Source"
 | rename field_name as "Missing Field"
-| rename notes as Description
 | rename field_importance as "Field Importance"
-| table Datamodel "Data Source" "Missing Field" Description "Field Importance"
+| table Datamodel "Data Source" "Missing Field" "Field Importance" notes
 | sort Datamodel "Data Source" "Field Importance" "Missing Field"
           ]]></query>
         </search>
