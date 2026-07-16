@@ -205,12 +205,21 @@ $base_search$
       )
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
-    | where tag_role="top_level"
-    | fields datamodel_key expected_tag
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level" OR tag_role="category"
+    | fields datamodel_key expected_tag tag_role coverage_set
 ]
-| eval top_level_tag_observed=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
 | stats
-    max(top_level_tag_observed) as top_level_tag_observed
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+    max(eval(if(tag_role="category",1,0))) as has_cat
+    max(matched_scope_fields) as matched_scope_fields
+    max(total_scope_fields) as total_scope_fields
+    by datamodel coverage_set
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| stats
+    max(set_complete) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
     by datamodel
@@ -391,9 +400,9 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Top-level and supporting CIM tags for matched datamodels compared with tags observed in the selected data.</p>
+              <p><strong>What this shows:</strong> Required coverage tags and supporting CIM tags for matched datamodels compared with tags observed in the selected data.</p>
               <p><strong>How to use it:</strong> Use this to separate potential field alignment from operational datamodel readiness.</p>
-              <p><strong>Read it as:</strong> Top-level tags indicate whether data is positioned for a datamodel. Supporting tags add context but should not be treated as sufficient by themselves.</p>
+              <p><strong>Read it as:</strong> Coverage requires all top-level tags for at least one root dataset (for example network + communicate for Network Traffic). Category tags are OR alternatives on models like Inventory. Supporting tags add context but are not sufficient alone.</p>
             </div>
           </details>
         </div>
@@ -417,48 +426,83 @@ $base_search$
       )
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | eval coverage_set=coalesce(coverage_set,"_default")
     | stats
         values(eval(if(tag_role="top_level",expected_tag,null()))) as top_level_tags
+        values(eval(if(tag_role="category",expected_tag,null()))) as category_tags
         values(eval(if(tag_role="supporting",expected_tag,null()))) as supporting_tags
         values(eval(if(tag_role="constraint",expected_tag,null()))) as constraint_tags
         values(expected_tag) as expected_tags
-        by datamodel_key
+        by datamodel_key coverage_set
 ]
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
 | eval expected_tags=coalesce(expected_tags,"No expected tags mapped")
 | eval top_level_tags=coalesce(top_level_tags,"No top-level tags mapped")
+| eval category_tags=coalesce(category_tags,"No category tags mapped")
 | eval supporting_tags=coalesce(supporting_tags,"No supporting tags mapped")
 | eval constraint_tags=coalesce(constraint_tags,"No constraint tags mapped")
 | eval observed_tags=coalesce(observed_tags,"No observed tags")
 | eval top_level_eval=top_level_tags
 | mvexpand top_level_eval
-| eval top_level_tag_observed=case(
-    top_level_eval="No top-level tags mapped","unknown",
-    observed_tags="No observed tags","no",
-    mvfind(observed_tags, top_level_eval)>=0,"yes",
+| eval top_hit=case(
+    top_level_eval="No top-level tags mapped",null(),
+    observed_tags="No observed tags",0,
+    mvfind(observed_tags, top_level_eval)>=0,1,
+    true(),0
+)
+| eval category_eval=category_tags
+| mvexpand category_eval
+| eval cat_hit=case(
+    category_eval="No category tags mapped",null(),
+    observed_tags="No observed tags",0,
+    mvfind(observed_tags, category_eval)>=0,1,
+    true(),0
+)
+| stats
+    values(top_level_tags) as top_level_tags
+    values(category_tags) as category_tags
+    values(supporting_tags) as supporting_tags
+    values(constraint_tags) as constraint_tags
+    values(observed_tags) as observed_tags
+    min(top_hit) as top_ok
+    max(cat_hit) as cat_hit
+    max(eval(if(isnull(cat_hit),0,1))) as has_cat
+    max(matched_fields) as matched_fields
+    by datamodel group_value coverage_set
+| eval set_complete=case(
+    isnull(top_ok),"unknown",
+    top_ok=1 AND (has_cat=0 OR cat_hit=1),"yes",
     true(),"no"
 )
 | stats
     values(top_level_tags) as top_level_tags
+    values(category_tags) as category_tags
     values(supporting_tags) as supporting_tags
     values(constraint_tags) as constraint_tags
     values(observed_tags) as observed_tags
-    values(top_level_tag_observed) as top_level_tag_observed
+    values(set_complete) as set_complete
     max(matched_fields) as matched_fields
     by datamodel group_value
-| eval top_level_tags=mvjoin(mvsort(top_level_tags),", ")
-| eval supporting_tags=mvjoin(mvsort(supporting_tags),", ")
-| eval constraint_tags=mvjoin(mvsort(constraint_tags),", ")
+| eval coverage_observed=case(
+    mvfind(set_complete,"yes")>=0,"yes",
+    mvfind(set_complete,"no")>=0,"no",
+    true(),"unknown"
+)
+| eval top_level_tags=mvjoin(mvsort(mvdedup(top_level_tags)),", ")
+| eval category_tags=mvjoin(mvsort(mvdedup(category_tags)),", ")
+| eval supporting_tags=mvjoin(mvsort(mvdedup(supporting_tags)),", ")
+| eval constraint_tags=mvjoin(mvsort(mvdedup(constraint_tags)),", ")
 | eval observed_tags=mvjoin(mvsort(observed_tags),", ")
 | rename datamodel as Datamodel
 | rename group_value as "Data Source"
 | rename top_level_tags as "Top-Level Tags"
+| rename category_tags as "Category Tags"
 | rename supporting_tags as "Supporting Tags"
 | rename constraint_tags as "Constraint Tags"
 | rename observed_tags as "Observed Tags"
-| rename top_level_tag_observed as "Top-Level Tag Observed"
+| rename coverage_observed as "Coverage Tags Observed"
 | rename matched_fields as "Matched Fields"
-| table Datamodel "Data Source" "Matched Fields" "Top-Level Tags" "Supporting Tags" "Constraint Tags" "Observed Tags" "Top-Level Tag Observed"
+| table Datamodel "Data Source" "Matched Fields" "Top-Level Tags" "Category Tags" "Supporting Tags" "Constraint Tags" "Observed Tags" "Coverage Tags Observed"
 | sort Datamodel "Data Source"
           ]]></query>
         </search>

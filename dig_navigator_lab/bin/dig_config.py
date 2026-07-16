@@ -20,7 +20,12 @@ SA_CIM_SOURCE = "sa_cim:/services/data/models"
 
 SEARCH_EXPORT_TIMEOUT = 180
 
-CIM_TAG_REGEX = r'tag="?([A-Za-z0-9_]+)"?'
+CIM_TAG_REGEX = r'tag\s*=\s*"?([A-Za-z0-9_]+)"?'
+CIM_MACRO_REGEX = re.compile(r"`[^`]+`")
+CIM_NOT_CLAUSE_REGEX = re.compile(r"\bNOT\s*\([^)]*\)", flags=re.IGNORECASE)
+
+# Root dataset parents in SA_CIM model JSON / REST eai:data.
+ROOT_PARENTS = frozenset({"", "BaseEvent", "BaseSearch", "BaseTransaction"})
 
 # Only ingest datamodels owned by the CIM add-on.
 SA_CIM_APPS = {"Splunk_SA_CIM", "SA_CIM"}
@@ -139,8 +144,8 @@ def make_datamodel_field_key(datamodel, field_name):
     return hashlib.sha256(raw).hexdigest()
 
 
-def make_datamodel_tag_key(datamodel, tag, tag_role):
-    raw = f"{datamodel}:{tag_role}:{tag}".lower().encode("utf-8")
+def make_datamodel_tag_key(datamodel, tag, tag_role, coverage_set=""):
+    raw = f"{datamodel}:{coverage_set}:{tag_role}:{tag}".lower().encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -286,6 +291,78 @@ def extract_constraint_tags(value):
     return [match.strip().lower() for match in matches if match and match.strip()]
 
 
+def normalize_constraint_text(value):
+    raw_values = value if isinstance(value, list) else [value]
+    parts = []
+    for raw in raw_values:
+        text = str(raw or "").strip()
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
+def parse_constraint_tag_requirements(constraint_search):
+    """
+    Parse a CIM dataset constraint into:
+      - and_tags: required together for coverage (e.g. network + communicate)
+      - category_tags: OR-group alternatives (e.g. Inventory cpu|memory|...)
+
+    Index macros and NOT(...) clauses are stripped before parsing.
+    """
+    text = normalize_constraint_text(constraint_search)
+    if not text:
+        return set(), set()
+
+    text = CIM_MACRO_REGEX.sub(" ", text)
+    text = CIM_NOT_CLAUSE_REGEX.sub(" ", text)
+
+    category_tags = set()
+    spans = []
+    stack = []
+    for idx, char in enumerate(text):
+        if char == "(":
+            stack.append(idx)
+        elif char == ")" and stack:
+            start = stack.pop()
+            spans.append((start, idx + 1, text[start + 1:idx]))
+
+    or_spans = [
+        span for span in spans
+        if re.search(r"\bOR\b", span[2], flags=re.IGNORECASE)
+        and re.search(CIM_TAG_REGEX, span[2], flags=re.IGNORECASE)
+    ]
+    # Keep outermost OR groups only (nested OR branches stay inside the parent group).
+    outer_or_spans = [
+        span for span in or_spans
+        if not any(
+            other is not span
+            and span[0] >= other[0]
+            and span[1] <= other[1]
+            for other in or_spans
+        )
+    ]
+
+    remainder = text
+    for start, end, inner in sorted(outer_or_spans, key=lambda item: item[0], reverse=True):
+        for tag in re.findall(CIM_TAG_REGEX, inner, flags=re.IGNORECASE):
+            cleaned = tag.strip().lower()
+            if cleaned:
+                category_tags.add(cleaned)
+        remainder = remainder[:start] + " " + remainder[end:]
+
+    and_tags = {
+        tag.strip().lower()
+        for tag in re.findall(CIM_TAG_REGEX, remainder, flags=re.IGNORECASE)
+        if tag and tag.strip()
+    }
+    and_tags -= category_tags
+    return and_tags, category_tags
+
+
+def is_valid_cim_tag(tag):
+    return bool(tag) and bool(re.match(r"^[a-z0-9_]+$", tag))
+
+
 def map_field_rows(result_rows, now):
     records = []
     seen = set()
@@ -339,6 +416,19 @@ def map_field_rows(result_rows, now):
 
 
 def map_tag_rows(result_rows, now):
+    """
+    Build CIM tag role records from SA_CIM dataset hierarchy.
+
+    Coverage model:
+      - Each root dataset (BaseEvent/BaseSearch/BaseTransaction) is a coverage_set.
+      - top_level tags are AND-required within that set (from root constraints, or
+        comment.tags when the constraint has no tag= clauses).
+      - category tags are OR alternatives from root constraints (Inventory/Performance).
+      - A datamodel is covered when ANY coverage_set is fully satisfied:
+          all top_level present AND (no category tags OR at least one category present).
+      - supporting tags are non-root object tags not already required as top_level/category.
+      - constraint tags are every tag= value found in constraint searches (informational).
+    """
     records = []
     seen = set()
 
@@ -346,58 +436,116 @@ def map_tag_rows(result_rows, now):
 
     for row in result_rows:
         datamodel = as_scalar(row.get("datamodel") or row.get("title"))
-        parent_dataset = as_scalar(row.get("parent_dataset"))
+        dataset = as_scalar(row.get("dataset") or row.get("objectName"))
+        parent_dataset = as_scalar(row.get("parent_dataset") or row.get("parentName"))
         if not datamodel:
             continue
         if not is_allowed_datamodel(datamodel):
             continue
 
-        tag_bucket = per_datamodel.setdefault(
+        model_state = per_datamodel.setdefault(
             datamodel,
-            {"top_level": set(), "supporting": set(), "constraint": set()},
+            {
+                "roots": {},
+                "supporting": set(),
+                "constraint": set(),
+            },
         )
 
-        object_tags = split_tag_values(row.get("object_tags"))
-        constraint_tags = extract_constraint_tags(row.get("constraint_search"))
+        object_tags = [
+            tag for tag in split_tag_values(row.get("object_tags")) if is_valid_cim_tag(tag)
+        ]
+        constraint_text = normalize_constraint_text(row.get("constraint_search"))
+        and_tags, category_tags = parse_constraint_tag_requirements(constraint_text)
+        and_tags = {tag for tag in and_tags if is_valid_cim_tag(tag)}
+        category_tags = {tag for tag in category_tags if is_valid_cim_tag(tag)}
+        model_state["constraint"].update(extract_constraint_tags(constraint_text))
 
-        if parent_dataset in ("", "BaseEvent"):
-            tag_bucket["top_level"].update(object_tags)
+        if parent_dataset in ROOT_PARENTS:
+            coverage_set = dataset or "root"
+            root_state = model_state["roots"].setdefault(
+                coverage_set,
+                {"top_level": set(), "category": set()},
+            )
+            if and_tags:
+                root_state["top_level"].update(and_tags)
+            elif object_tags:
+                # BaseSearch roots often store requirements only in comment.tags.
+                root_state["top_level"].update(object_tags)
+            root_state["category"].update(category_tags)
         else:
-            tag_bucket["supporting"].update(object_tags)
+            model_state["supporting"].update(object_tags)
 
-        tag_bucket["constraint"].update(constraint_tags)
-
-    for datamodel, role_map in per_datamodel.items():
+    for datamodel, model_state in per_datamodel.items():
         datamodel_lower = datamodel.lower()
+        reserved_tags = set()
 
-        for expected_tag in sorted(role_map["top_level"]):
-            if re.match(r"^[a-z0-9_]+$", expected_tag) and expected_tag != datamodel_lower:
-                dedupe_key = (datamodel_lower, expected_tag, "top_level")
-                if dedupe_key not in seen:
-                    seen.add(dedupe_key)
-                    records.append({
-                        "_key": make_datamodel_tag_key(datamodel, expected_tag, "top_level"),
-                        "datamodel": datamodel,
-                        "expected_tag": expected_tag,
-                        "tag_role": "top_level",
-                        "updated_at": now,
-                    })
-
-        for tag_role in ("supporting", "constraint"):
-            for expected_tag in sorted(role_map[tag_role]):
-                if not expected_tag:
-                    continue
-                dedupe_key = (datamodel_lower, expected_tag, tag_role)
+        for coverage_set, root_state in sorted(model_state["roots"].items()):
+            for expected_tag in sorted(root_state["top_level"]):
+                reserved_tags.add(expected_tag)
+                dedupe_key = (datamodel_lower, coverage_set, expected_tag, "top_level")
                 if dedupe_key in seen:
                     continue
                 seen.add(dedupe_key)
                 records.append({
-                    "_key": make_datamodel_tag_key(datamodel, expected_tag, tag_role),
+                    "_key": make_datamodel_tag_key(
+                        datamodel, expected_tag, "top_level", coverage_set
+                    ),
                     "datamodel": datamodel,
                     "expected_tag": expected_tag,
-                    "tag_role": tag_role,
+                    "tag_role": "top_level",
+                    "coverage_set": coverage_set,
                     "updated_at": now,
                 })
+
+            for expected_tag in sorted(root_state["category"]):
+                reserved_tags.add(expected_tag)
+                dedupe_key = (datamodel_lower, coverage_set, expected_tag, "category")
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                records.append({
+                    "_key": make_datamodel_tag_key(
+                        datamodel, expected_tag, "category", coverage_set
+                    ),
+                    "datamodel": datamodel,
+                    "expected_tag": expected_tag,
+                    "tag_role": "category",
+                    "coverage_set": coverage_set,
+                    "updated_at": now,
+                })
+
+        for expected_tag in sorted(model_state["supporting"] - reserved_tags):
+            if not is_valid_cim_tag(expected_tag):
+                continue
+            dedupe_key = (datamodel_lower, "", expected_tag, "supporting")
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            records.append({
+                "_key": make_datamodel_tag_key(datamodel, expected_tag, "supporting"),
+                "datamodel": datamodel,
+                "expected_tag": expected_tag,
+                "tag_role": "supporting",
+                "coverage_set": "",
+                "updated_at": now,
+            })
+
+        for expected_tag in sorted(model_state["constraint"]):
+            if not is_valid_cim_tag(expected_tag):
+                continue
+            dedupe_key = (datamodel_lower, "", expected_tag, "constraint")
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            records.append({
+                "_key": make_datamodel_tag_key(datamodel, expected_tag, "constraint"),
+                "datamodel": datamodel,
+                "expected_tag": expected_tag,
+                "tag_role": "constraint",
+                "coverage_set": "",
+                "updated_at": now,
+            })
 
     return records
 

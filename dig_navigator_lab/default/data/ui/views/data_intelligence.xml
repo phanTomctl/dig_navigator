@@ -606,12 +606,21 @@ $base_search$
       )
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
-    | where tag_role="top_level"
-    | fields datamodel_key expected_tag
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level" OR tag_role="category"
+    | fields datamodel_key expected_tag tag_role coverage_set
 ]
-| eval top_level_tag_observed=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
 | stats
-    max(top_level_tag_observed) as top_level_tag_observed
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+    max(eval(if(tag_role="category",1,0))) as has_cat
+    max(matched_scope_fields) as matched_scope_fields
+    max(total_scope_fields) as total_scope_fields
+    by datamodel coverage_set
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| stats
+    max(set_complete) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
     by datamodel
@@ -685,19 +694,30 @@ $base_search$
       | inputlookup cim_datamodel_tags_lookup
       | eval datamodel=trim(datamodel)
       | eval expected_tag=lower(trim(expected_tag))
-      | eval tag_role=coalesce(tag_role,"supporting")
-      | where tag_role="top_level"
-      | stats values(expected_tag) as expected_tags by datamodel
+      | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+      | eval coverage_set=coalesce(coverage_set,"_default")
+      | where tag_role="top_level" OR tag_role="category"
+      | fields datamodel expected_tag tag_role coverage_set
   ]
 
-  | mvexpand expected_tags
-  | eval has_expected_tag=if(mvfind(observed_tags, expected_tags)>=0,1,0)
-
+  | eval tag_hit=if(mvfind(observed_tags, expected_tag)>=0,1,0)
   | stats
-      max(has_expected_tag) as has_expected_tag
+      min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+      max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+      max(eval(if(tag_role="category",1,0))) as has_cat
+      values(eval(if(tag_role="top_level",expected_tag,null()))) as expected_tags
       max(events_checked) as events_checked
       dc(field_name) as matched_dm_fields
       values(field_name) as matching_fields
+      values(observed_tags) as observed_tags
+      by group_value datamodel coverage_set
+
+  | eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+  | stats
+      max(set_complete) as has_expected_tag
+      max(events_checked) as events_checked
+      max(matched_dm_fields) as matched_dm_fields
+      values(matching_fields) as matching_fields
       values(expected_tags) as related_cim_tags
       values(observed_tags) as observed_tags
       by group_value datamodel

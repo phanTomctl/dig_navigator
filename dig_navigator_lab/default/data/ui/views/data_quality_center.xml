@@ -186,7 +186,10 @@ $base_search$
     | inputlookup cim_datamodel_tags_lookup
     | eval datamodel=trim(datamodel)
     | eval expected_tag=lower(trim(expected_tag))
-    | stats values(expected_tag) as expected_tags by datamodel
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level" OR tag_role="category"
+    | fields datamodel expected_tag tag_role coverage_set
 ]
 
 | join type=left max=0 datamodel [
@@ -197,12 +200,23 @@ $base_search$
 ]
 
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval expected_tags=if(isnull(expected_tags),"__no_expected_tag__",expected_tags)
-| mvexpand expected_tags
-| eval has_expected_tag_mapping=if(expected_tags!="__no_expected_tag__",1,0)
-| eval tag_hit=if(has_expected_tag_mapping=1 AND mvfind(observed_tags, expected_tags)>=0,1,0)
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval has_expected_tag_mapping=if(isnotnull(expected_tag),1,0)
 | eval governance_mapped=if(isnotnull(frameworks),1,0)
 
+| stats
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+    max(eval(if(tag_role="category",1,0))) as has_cat
+    max(has_expected_tag_mapping) as has_expected_tag_mapping
+    max(structure_score) as structure_score
+    max(consistency_score) as consistency_score
+    max(current_fields) as current_fields
+    max(matched_dm_fields) as matched_dm_fields
+    max(governance_mapped) as governance_mapped
+    by group_value datamodel coverage_set
+
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
 | stats
     max(structure_score) as structure_score
     max(consistency_score) as consistency_score
@@ -210,7 +224,7 @@ $base_search$
     max(matched_dm_fields) as matched_dm_fields
     dc(eval(if(datamodel!="__none__",datamodel,null()))) as total_matched_datamodels
     dc(eval(if(has_expected_tag_mapping=1 AND datamodel!="__none__",datamodel,null()))) as taggable_datamodels
-    dc(eval(if(tag_hit=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
+    dc(eval(if(set_complete=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
     dc(eval(if(governance_mapped=1 AND datamodel!="__none__",datamodel,null()))) as mapped_datamodels
     by group_value
 
@@ -272,7 +286,10 @@ $base_search$
     | inputlookup cim_datamodel_tags_lookup
     | eval datamodel=trim(datamodel)
     | eval expected_tag=lower(trim(expected_tag))
-    | stats values(expected_tag) as expected_tags by datamodel
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level" OR tag_role="category"
+    | fields datamodel expected_tag tag_role coverage_set
 ]
 
 | join type=left max=0 datamodel [
@@ -283,12 +300,24 @@ $base_search$
 ]
 
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval expected_tags=if(isnull(expected_tags),"__no_expected_tag__",expected_tags)
-| mvexpand expected_tags
-| eval has_expected_tag_mapping=if(expected_tags!="__no_expected_tag__",1,0)
-| eval tag_hit=if(has_expected_tag_mapping=1 AND mvfind(observed_tags, expected_tags)>=0,1,0)
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval has_expected_tag_mapping=if(isnotnull(expected_tag),1,0)
 | eval governance_mapped=if(isnotnull(frameworks),1,0)
 
+| stats
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+    max(eval(if(tag_role="category",1,0))) as has_cat
+    max(has_expected_tag_mapping) as has_expected_tag_mapping
+    max(event_count) as event_count
+    max(structure_score) as structure_score
+    max(consistency_score) as consistency_score
+    max(current_fields) as current_fields
+    max(matched_dm_fields) as matched_dm_fields
+    max(governance_mapped) as governance_mapped
+    by group_value datamodel coverage_set
+
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
 | stats
     max(event_count) as event_count
     max(structure_score) as structure_score
@@ -297,7 +326,7 @@ $base_search$
     max(matched_dm_fields) as matched_dm_fields
     dc(eval(if(datamodel!="__none__",datamodel,null()))) as matched_datamodel_count
     dc(eval(if(has_expected_tag_mapping=1 AND datamodel!="__none__",datamodel,null()))) as taggable_datamodels
-    dc(eval(if(tag_hit=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
+    dc(eval(if(set_complete=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
     dc(eval(if(governance_mapped=1 AND datamodel!="__none__",datamodel,null()))) as mapped_datamodels
     by group_value
 
@@ -360,7 +389,10 @@ $base_search$
     | inputlookup cim_datamodel_tags_lookup
     | eval datamodel=trim(datamodel)
     | eval expected_tag=lower(trim(expected_tag))
-    | stats values(expected_tag) as expected_tags by datamodel
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level" OR tag_role="category"
+    | fields datamodel expected_tag tag_role coverage_set
 ]
 
 | join type=left max=0 datamodel [
@@ -371,12 +403,27 @@ $base_search$
 ]
 
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval expected_tags=if(isnull(expected_tags),"__no_expected_tag__",expected_tags)
-| mvexpand expected_tags
-| eval has_expected_tag_mapping=if(expected_tags!="__no_expected_tag__",1,0)
-| eval tag_hit=if(has_expected_tag_mapping=1 AND mvfind(observed_tags, expected_tags)>=0,1,0)
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval has_expected_tag_mapping=if(isnotnull(expected_tag),1,0)
 | eval governance_mapped=if(isnotnull(frameworks),1,0)
 
+| stats
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+    max(eval(if(tag_role="category",1,0))) as has_cat
+    max(has_expected_tag_mapping) as has_expected_tag_mapping
+    max(event_count) as event_count
+    max(structure_score) as structure_score
+    max(consistency_score) as consistency_score
+    max(distinct_shapes) as distinct_shapes
+    max(shape_ratio) as shape_ratio
+    max(length_variance) as length_variance
+    max(current_fields) as current_fields
+    max(matched_dm_fields) as matched_dm_fields
+    max(governance_mapped) as governance_mapped
+    by group_value datamodel coverage_set
+
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
 | stats
     max(event_count) as event_count
     max(structure_score) as structure_score
@@ -388,7 +435,7 @@ $base_search$
     max(matched_dm_fields) as matched_dm_fields
     dc(eval(if(datamodel!="__none__",datamodel,null()))) as matched_datamodel_count
     dc(eval(if(has_expected_tag_mapping=1 AND datamodel!="__none__",datamodel,null()))) as taggable_datamodels
-    dc(eval(if(tag_hit=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
+    dc(eval(if(set_complete=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
     dc(eval(if(governance_mapped=1 AND datamodel!="__none__",datamodel,null()))) as mapped_datamodels
     by group_value
 
@@ -463,7 +510,10 @@ $base_search$
     | inputlookup cim_datamodel_tags_lookup
     | eval datamodel=trim(datamodel)
     | eval expected_tag=lower(trim(expected_tag))
-    | stats values(expected_tag) as expected_tags by datamodel
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level" OR tag_role="category"
+    | fields datamodel expected_tag tag_role coverage_set
 ]
 
 | join type=left max=0 datamodel [
@@ -474,31 +524,40 @@ $base_search$
 ]
 
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval expected_tags_for_eval=if(isnull(expected_tags),"__no_expected_tag__",expected_tags)
-| mvexpand expected_tags_for_eval
-| eval tag_hit=if(expected_tags_for_eval!="__no_expected_tag__" AND mvfind(observed_tags, expected_tags_for_eval)>=0,1,0)
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| eval has_tag_mapping=if(isnotnull(expected_tag),1,0)
 
-| eventstats
-    max(tag_hit) as any_expected_tag_observed
-    by group_value datamodel
+| stats
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
+    max(eval(if(tag_role="category",1,0))) as has_cat
+    max(has_tag_mapping) as has_tag_mapping
+    values(eval(if(tag_role="top_level",expected_tag,null()))) as related_cim_tags
+    max(matched_fields) as matched_fields
+    values(field_examples) as field_examples
+    values(observed_tags) as observed_tags
+    values(frameworks) as frameworks
+    max(event_count) as event_count
+    by group_value datamodel coverage_set
 
-| eval tag_status=case(
-    isnull(expected_tags),"No related CIM tag mapping",
-    any_expected_tag_observed=1,"Related CIM tag observed",
-    true(),"Related CIM tag not observed"
-)
-| eval governance_status=if(isnotnull(frameworks),"Governance mapped","Unmapped")
-
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
 | stats
     max(matched_fields) as matched_fields
     values(field_examples) as field_examples
     values(observed_tags) as observed_tags
-    values(expected_tags) as related_cim_tags
+    values(related_cim_tags) as related_cim_tags
     values(frameworks) as frameworks
-    values(tag_status) as tag_status
-    values(governance_status) as governance_status
+    max(has_tag_mapping) as has_tag_mapping
+    max(set_complete) as coverage_complete
     max(event_count) as event_count
     by group_value datamodel
+
+| eval tag_status=case(
+    has_tag_mapping=0,"No related CIM tag mapping",
+    coverage_complete=1,"Coverage tags observed",
+    true(),"Coverage tags not observed"
+)
+| eval governance_status=if(isnotnull(frameworks),"Governance mapped","Unmapped")
 
 | rename group_value as "Data Source"
 | rename datamodel as "Datamodel"
