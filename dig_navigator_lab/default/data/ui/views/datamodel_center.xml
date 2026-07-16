@@ -168,11 +168,23 @@ $base_search$
   <row>
     <panel>
       <title>Datamodel Perspective by Datamodel</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Average field alignment across data sources for each datamodel, split into current vs potential based on whether coverage tags were observed.</p>
+              <p><strong>How to use it:</strong> Compare with the Field Alignment and Readiness Summary below for per-source detail. Drill into a datamodel when the average looks strong but individual sources vary.</p>
+              <p><strong>Read it as:</strong> Each bar is the average of per-source field coverage percentages, not a combined field union across sources. Current applies where top-level coverage tags are present; Potential applies where matching fields exist but those tags are not observed.</p>
+            </div>
+          </details>
+        </div>
+      </html>
       <chart>
         <search base="base_dm_field_matches">
           <query><![CDATA[
 | where field_scope_match=1
-| stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags by datamodel
+| stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags by datamodel group_value
 | join type=left max=0 datamodel [
     | inputlookup datamodel_fields_lookup
     | eval datamodel=trim(datamodel)
@@ -214,16 +226,22 @@ $base_search$
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
-    by datamodel coverage_set
+    by datamodel group_value coverage_set
 | eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(set_complete) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
-    by datamodel
+    by datamodel group_value
 | eval field_alignment_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
 | eval current_alignment_pct=if(top_level_tag_observed=1,field_alignment_pct,0)
 | eval potential_alignment_pct=if(top_level_tag_observed=0,field_alignment_pct,0)
+| stats
+    avg(current_alignment_pct) as current_alignment_pct
+    avg(potential_alignment_pct) as potential_alignment_pct
+    by datamodel
+| eval current_alignment_pct=round(current_alignment_pct,2)
+| eval potential_alignment_pct=round(potential_alignment_pct,2)
 | where current_alignment_pct>0 OR potential_alignment_pct>0
 | eval "Current Alignment %"=case("$dm_perspective$"="operational" OR "$dm_perspective$"="current" OR "$dm_perspective$"="combined",current_alignment_pct,true(),null())
 | eval "Potential Alignment %"=case("$dm_perspective$"="potential" OR "$dm_perspective$"="combined",potential_alignment_pct,true(),null())
@@ -234,7 +252,7 @@ $base_search$
         <option name="charting.chart">column</option>
         <option name="charting.legend.placement">right</option>
         <option name="charting.axisTitleX.text">Datamodel</option>
-        <option name="charting.axisTitleY.text">Percentage</option>
+        <option name="charting.axisTitleY.text">Avg percentage across data sources</option>
         <option name="charting.seriesColors">[#00e5ff,#7dff9a,#ffc857,#ff4fd8]</option>
       </chart>
     </panel>

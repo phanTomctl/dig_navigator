@@ -501,9 +501,9 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-            <p><strong>What this shows:</strong> Current datamodel alignment and potential alignment opportunities for Splunk CIM datamodels.</p>
-            <p><strong>Why it matters:</strong> Current alignment shows datamodel field coverage where the expected top-level CIM tag is observed. Potential alignment shows field coverage for datamodels where matching fields exist but the top-level tag is not observed.</p>
-            <p><strong>Read it as:</strong> Use Field scope to compare recommended fields or all datamodel fields. Use the Data Readiness IN drilldown for the field and tag evidence behind each result.</p>
+            <p><strong>What this shows:</strong> Average field alignment across data sources for each CIM datamodel, split into current vs potential based on whether coverage tags were observed.</p>
+            <p><strong>Why it matters:</strong> Current alignment is the average per-source field coverage where top-level coverage tags are present. Potential alignment is the average per-source coverage where matching fields exist but those tags are not observed.</p>
+            <p><strong>Read it as:</strong> Bars are averages across data sources, not a combined field union. Use Field scope to compare recommended vs all fields, then drill into Data Readiness IN for per-source evidence.</p>
           </div>
           </details>
         </div>
@@ -544,15 +544,16 @@ $base_search$
       <chart>
         <search base="base_sample">
           <query><![CDATA[
-| eventstats values(tag) as scope_observed_tags
-| fields scope_observed_tags *
+| eval group_value=coalesce(group_value,"unknown")
+| eventstats values(tag) as observed_tags by group_value
+| fields group_value observed_tags *
 | fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
-| untable scope_observed_tags field_name field_value
+| untable group_value field_name field_value
 | where isnotnull(field_value)
 | eval field_name=lower(trim(field_name))
 | where NOT match(field_name,"^_")
-| where field_name!="scope_observed_tags"
-| stats count as field_instances values(scope_observed_tags) as observed_tags by field_name
+| where field_name!="observed_tags"
+| stats count as field_instances values(observed_tags) as observed_tags by group_value field_name
 | join type=inner max=0 field_name [
     | inputlookup datamodel_fields_lookup
     | eval datamodel=trim(datamodel)
@@ -573,7 +574,7 @@ $base_search$
 | stats
     dc(field_name) as matched_scope_fields
     values(observed_tags) as observed_tags
-    by datamodel
+    by datamodel group_value
 | join type=left max=0 datamodel [
     | inputlookup datamodel_fields_lookup
     | eval datamodel=trim(datamodel)
@@ -615,16 +616,22 @@ $base_search$
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
-    by datamodel coverage_set
+    by datamodel group_value coverage_set
 | eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(set_complete) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
-    by datamodel
+    by datamodel group_value
 | eval field_alignment_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
 | eval current_alignment_pct=if(top_level_tag_observed=1,field_alignment_pct,0)
 | eval potential_alignment_pct=if(top_level_tag_observed=0,field_alignment_pct,0)
+| stats
+    avg(current_alignment_pct) as current_alignment_pct
+    avg(potential_alignment_pct) as potential_alignment_pct
+    by datamodel
+| eval current_alignment_pct=round(current_alignment_pct,2)
+| eval potential_alignment_pct=round(potential_alignment_pct,2)
 | where current_alignment_pct>0 OR potential_alignment_pct>0
 | eval "Current Alignment %"=case("$dm_perspective$"="operational" OR "$dm_perspective$"="current" OR "$dm_perspective$"="combined",current_alignment_pct,true(),null())
 | eval "Potential Alignment %"=case("$dm_perspective$"="potential" OR "$dm_perspective$"="combined",potential_alignment_pct,true(),null())
@@ -639,6 +646,7 @@ $base_search$
         <option name="charting.legend.placement">right</option>
         <option name="charting.axisTitleX.visibility">visible</option>
         <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Avg percentage across data sources</option>
         <option name="charting.chart.stackMode">default</option>
         <option name="charting.axisLabelsX.majorLabelStyle.rotation">-45</option>
         <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
