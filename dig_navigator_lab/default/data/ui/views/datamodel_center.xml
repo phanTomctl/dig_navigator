@@ -280,8 +280,7 @@ $base_search$
 | stats
     dc(field_name) as matched_scope_fields
     dc(eval(if(model_field=1,field_name,null()))) as matched_required_recommended_fields
-    dc(eval(if(required=1,field_name,null()))) as matched_required_fields
-    sum(field_instances) as field_instances
+    sum(field_instances) as matched_field_occurrences
     max(event_count) as event_count
     by datamodel group_value
 | join type=left max=0 datamodel [
@@ -296,20 +295,19 @@ $base_search$
     | eval model_field=if(recommended=1 OR required=1,1,0)
     | eval field_scope_match=case("$field_scope$"="all",1,"$field_scope$"="recommended" AND model_field=1,1,true(),0)
     | where field_scope_match=1
-    | stats dc(field_name) as total_scope_fields dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields dc(eval(if(required=1,field_name,null()))) as total_required_fields by datamodel
+    | stats dc(field_name) as total_scope_fields dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields by datamodel
 ]
 | eval coverage_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
 | eval recommended_coverage_pct=if(total_required_recommended_fields>0,round((matched_required_recommended_fields/total_required_recommended_fields)*100,2),0)
-| eval required_coverage_pct=if(total_required_fields>0,round((matched_required_fields/total_required_fields)*100,2),0)
 | rename datamodel as Datamodel
 | rename group_value as "Data Source"
 | rename total_scope_fields as "Total Scope Fields"
 | rename matched_scope_fields as "Matched Scope Fields"
 | rename coverage_pct as "Field Coverage %"
 | rename recommended_coverage_pct as "Recommended Field Alignment %"
-| rename required_coverage_pct as "Required Coverage %"
 | rename event_count as "Events Checked"
-| table Datamodel "Data Source" "Events Checked" "Total Scope Fields" "Matched Scope Fields" "Field Coverage %" "Recommended Field Alignment %" "Required Coverage %" field_instances
+| rename matched_field_occurrences as "Matched Field Occurrences"
+| table Datamodel "Data Source" "Events Checked" "Total Scope Fields" "Matched Scope Fields" "Field Coverage %" "Recommended Field Alignment %" "Matched Field Occurrences"
 | sort Datamodel "Data Source"
           ]]></query>
         </search>
