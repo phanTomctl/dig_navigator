@@ -423,10 +423,9 @@ def map_tag_rows(result_rows, now):
       - Each root dataset (BaseEvent/BaseSearch/BaseTransaction) is a coverage_set.
       - top_level tags are AND-required within that set (from root constraints, or
         comment.tags when the constraint has no tag= clauses).
-      - category tags are OR alternatives from root constraints (Inventory/Performance).
-      - A datamodel is covered when ANY coverage_set is fully satisfied:
-          all top_level present AND (no category tags OR at least one category present).
-      - supporting tags are non-root object tags not already required as top_level/category.
+      - A datamodel is covered when ANY coverage_set has all of its top_level tags present.
+      - OR-group tags from root constraints (Inventory/Performance categories) and
+        non-root object tags are supporting context only; they do not gate coverage.
       - constraint tags are every tag= value found in constraint searches (informational).
     """
     records = []
@@ -465,14 +464,15 @@ def map_tag_rows(result_rows, now):
             coverage_set = dataset or "root"
             root_state = model_state["roots"].setdefault(
                 coverage_set,
-                {"top_level": set(), "category": set()},
+                {"top_level": set()},
             )
             if and_tags:
                 root_state["top_level"].update(and_tags)
             elif object_tags:
                 # BaseSearch roots often store requirements only in comment.tags.
                 root_state["top_level"].update(object_tags)
-            root_state["category"].update(category_tags)
+            # Inventory/Performance OR branches are supporting context only.
+            model_state["supporting"].update(category_tags)
         else:
             model_state["supporting"].update(object_tags)
 
@@ -494,23 +494,6 @@ def map_tag_rows(result_rows, now):
                     "datamodel": datamodel,
                     "expected_tag": expected_tag,
                     "tag_role": "top_level",
-                    "coverage_set": coverage_set,
-                    "updated_at": now,
-                })
-
-            for expected_tag in sorted(root_state["category"]):
-                reserved_tags.add(expected_tag)
-                dedupe_key = (datamodel_lower, coverage_set, expected_tag, "category")
-                if dedupe_key in seen:
-                    continue
-                seen.add(dedupe_key)
-                records.append({
-                    "_key": make_datamodel_tag_key(
-                        datamodel, expected_tag, "category", coverage_set
-                    ),
-                    "datamodel": datamodel,
-                    "expected_tag": expected_tag,
-                    "tag_role": "category",
                     "coverage_set": coverage_set,
                     "updated_at": now,
                 })

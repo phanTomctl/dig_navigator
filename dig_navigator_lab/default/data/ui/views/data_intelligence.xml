@@ -607,18 +607,16 @@ $base_search$
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level" OR tag_role="category"
+    | where tag_role="top_level"
     | fields datamodel_key expected_tag tag_role coverage_set
 ]
 | eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
 | stats
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
-    max(eval(if(tag_role="category",1,0))) as has_cat
     max(matched_scope_fields) as matched_scope_fields
     max(total_scope_fields) as total_scope_fields
     by datamodel coverage_set
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(set_complete) as top_level_tag_observed
     max(matched_scope_fields) as matched_scope_fields
@@ -696,15 +694,13 @@ $base_search$
       | eval expected_tag=lower(trim(expected_tag))
       | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
       | eval coverage_set=coalesce(coverage_set,"_default")
-      | where tag_role="top_level" OR tag_role="category"
+      | where tag_role="top_level"
       | fields datamodel expected_tag tag_role coverage_set
   ]
 
   | eval tag_hit=if(mvfind(observed_tags, expected_tag)>=0,1,0)
   | stats
       min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-      max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
-      max(eval(if(tag_role="category",1,0))) as has_cat
       values(eval(if(tag_role="top_level",expected_tag,null()))) as expected_tags
       max(events_checked) as events_checked
       dc(field_name) as matched_dm_fields
@@ -712,7 +708,7 @@ $base_search$
       values(observed_tags) as observed_tags
       by group_value datamodel coverage_set
 
-  | eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+  | eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
   | stats
       max(set_complete) as has_expected_tag
       max(events_checked) as events_checked

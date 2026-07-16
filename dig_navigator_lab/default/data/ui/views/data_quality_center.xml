@@ -188,7 +188,7 @@ $base_search$
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level" OR tag_role="category"
+    | where tag_role="top_level"
     | fields datamodel expected_tag tag_role coverage_set
 ]
 
@@ -206,8 +206,6 @@ $base_search$
 
 | stats
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
-    max(eval(if(tag_role="category",1,0))) as has_cat
     max(has_expected_tag_mapping) as has_expected_tag_mapping
     max(structure_score) as structure_score
     max(consistency_score) as consistency_score
@@ -216,7 +214,7 @@ $base_search$
     max(governance_mapped) as governance_mapped
     by group_value datamodel coverage_set
 
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(structure_score) as structure_score
     max(consistency_score) as consistency_score
@@ -288,7 +286,7 @@ $base_search$
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level" OR tag_role="category"
+    | where tag_role="top_level"
     | fields datamodel expected_tag tag_role coverage_set
 ]
 
@@ -306,8 +304,6 @@ $base_search$
 
 | stats
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
-    max(eval(if(tag_role="category",1,0))) as has_cat
     max(has_expected_tag_mapping) as has_expected_tag_mapping
     max(event_count) as event_count
     max(structure_score) as structure_score
@@ -317,7 +313,7 @@ $base_search$
     max(governance_mapped) as governance_mapped
     by group_value datamodel coverage_set
 
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(event_count) as event_count
     max(structure_score) as structure_score
@@ -391,7 +387,7 @@ $base_search$
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level" OR tag_role="category"
+    | where tag_role="top_level"
     | fields datamodel expected_tag tag_role coverage_set
 ]
 
@@ -409,8 +405,6 @@ $base_search$
 
 | stats
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
-    max(eval(if(tag_role="category",1,0))) as has_cat
     max(has_expected_tag_mapping) as has_expected_tag_mapping
     max(event_count) as event_count
     max(structure_score) as structure_score
@@ -423,7 +417,7 @@ $base_search$
     max(governance_mapped) as governance_mapped
     by group_value datamodel coverage_set
 
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(event_count) as event_count
     max(structure_score) as structure_score
@@ -512,7 +506,7 @@ $base_search$
     | eval expected_tag=lower(trim(expected_tag))
     | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
     | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level" OR tag_role="category"
+    | where tag_role="top_level"
     | fields datamodel expected_tag tag_role coverage_set
 ]
 
@@ -529,8 +523,6 @@ $base_search$
 
 | stats
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(eval(if(tag_role="category",tag_hit,0))) as cat_hit
-    max(eval(if(tag_role="category",1,0))) as has_cat
     max(has_tag_mapping) as has_tag_mapping
     values(eval(if(tag_role="top_level",expected_tag,null()))) as related_cim_tags
     max(matched_fields) as matched_fields
@@ -540,7 +532,7 @@ $base_search$
     max(event_count) as event_count
     by group_value datamodel coverage_set
 
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1 AND (has_cat=0 OR cat_hit=1),1,0))
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(matched_fields) as matched_fields
     values(field_examples) as field_examples
