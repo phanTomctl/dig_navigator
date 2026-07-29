@@ -858,7 +858,7 @@ $base_search$
             <div class="context-panel">
             <p><strong>What this shows:</strong> The same field-reduction breakdown as the charts above, summarised per data source.</p>
             <p><strong>Why it matters:</strong> These columns should add up: Data Fields = Matched DM Fields + Non-matched Fields.</p>
-            <p><strong>Read it as:</strong> Matched DM Fields are observed fields inside the selected Field scope. Non-matched Fields are outside that scope. Matched Datamodels counts distinct CIM datamodels touched by the matched fields only.</p>
+            <p><strong>Read it as:</strong> Matched DM Fields are observed fields inside the selected Field scope. Non-matched Fields are outside that scope. Use Datamodel Readiness Overview for which CIM models the scope aligns to.</p>
           </div>
           </details>
         </div>
@@ -870,17 +870,14 @@ $base_search$
     dc(field_name) as current_fields
     dc(eval(if(would_drop=1,field_name,null()))) as dropped_fields
     dc(eval(if(keep_field=1,field_name,null()))) as future_fields
-    values(eval(if(keep_field=1,datamodels,null()))) as matched_dm_list
     by group_value
-| eval matched_datamodels=mvcount(mvdedup(matched_dm_list))
 | eval field_reduction_pct=if(current_fields>0,round((dropped_fields/current_fields)*100,2),0)
 | rename group_value as "Data Source"
 | rename current_fields as "Data Fields"
 | rename dropped_fields as "Non-matched Fields"
 | rename future_fields as "Matched DM Fields"
-| rename matched_datamodels as "Matched Datamodels"
 | rename field_reduction_pct as "Field Reduction %"
-| table "Data Source" "Data Fields" "Matched DM Fields" "Non-matched Fields" "Matched Datamodels" "Field Reduction %"
+| table "Data Source" "Data Fields" "Matched DM Fields" "Non-matched Fields" "Field Reduction %"
 | sort - "Field Reduction %"
           ]]></query>
         </search>
