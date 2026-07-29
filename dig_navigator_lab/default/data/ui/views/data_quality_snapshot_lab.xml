@@ -217,15 +217,26 @@ $base_search$
     ]]></query>
   </search>
 
-  <search id="tile_cim_overlap" base="base_sample">
+  <!--
+    CIM Alignment: recommended/scope field coverage for datamodels that have
+    at least one field match in the sample (not "% of observed fields in CIM").
+    Green/Amber/Red bands are applied in dig_snapshot_tiles.js.
+  -->
+  <search id="tile_cim_alignment" base="base_sample">
     <query><![CDATA[
 | fieldsummary maxvals=1
 | rename field as field_name
 | eval field_name=lower(trim(field_name))
 | where NOT match(field_name,"^_")
 | where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint|group_value|tag)$")
-| join type=left max=0 field_name [
+| eval in_sample=1
+| fields field_name in_sample
+| append [
     | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
     | eval field_name=lower(trim(field_name))
     | eval recommended=if(recommended="true" OR recommended=1,1,0)
     | eval required=if(required="true" OR required=1,1,0)
@@ -235,31 +246,60 @@ $base_search$
         true(),0
       )
     | where scope_field=1
-    | stats count as scope_hit by field_name
+    | eval from_lookup=1
+    | fields field_name datamodel from_lookup
 ]
-| eval matched=if(isnotnull(scope_hit),1,0)
-| stats dc(field_name) as current_fields sum(matched) as matched_scope_fields
-| eval cim_overlap_pct=round(if(current_fields>0,(matched_scope_fields/current_fields)*100,0),0)
-| fields cim_overlap_pct current_fields matched_scope_fields
+| stats
+    max(in_sample) as in_sample
+    max(from_lookup) as from_lookup
+    values(datamodel) as datamodels
+    by field_name
+| eval matched_field=if(in_sample=1 AND from_lookup=1,1,0)
+| eventstats max(matched_field) as any_dm_match
+| where from_lookup=1
+| mvexpand datamodels
+| rename datamodels as datamodel
+| eventstats max(matched_field) as model_has_evidence by datamodel
+| stats
+    dc(eval(if(model_has_evidence=1,field_name,null()))) as total_scope_fields
+    dc(eval(if(model_has_evidence=1 AND matched_field=1,field_name,null()))) as matched_scope_fields
+    max(any_dm_match) as any_dm_match
+    dc(eval(if(model_has_evidence=1,datamodel,null()))) as models_with_evidence
+| eval total_scope_fields=coalesce(total_scope_fields,0)
+| eval matched_scope_fields=coalesce(matched_scope_fields,0)
+| eval any_dm_match=coalesce(any_dm_match,0)
+| eval models_with_evidence=coalesce(models_with_evidence,0)
+| eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
+| fields cim_alignment_pct matched_scope_fields total_scope_fields any_dm_match models_with_evidence
     ]]></query>
   </search>
 
+  <!--
+    Delivery lag: average ingest delay vs lookup-backed expected healthy lag.
+    Future timestamps force Red. Bands applied in dig_snapshot_tiles.js.
+  -->
   <search id="tile_delivery_lag" base="base_timeliness_evidence">
     <query><![CDATA[
-| where delay_category!="Future timestamp"
 | stats
     count as total_events
-    count(eval(delay_category="Healthy")) as healthy_events
-    median(ingest_delay_seconds) as median_lag
-| eval healthy_pct=round(if(total_events>0,(healthy_events/total_events)*100,0),0)
-| eval median_lag_display=case(
-    isnull(median_lag), "n/a",
-    abs(median_lag) < 60, tostring(round(median_lag,0)) . "s",
-    abs(median_lag) < 3600, tostring(round(median_lag/60,1)) . "m",
-    abs(median_lag) < 86400, tostring(round(median_lag/3600,1)) . "h",
-    true(), tostring(round(median_lag/86400,1)) . "d"
+    avg(ingest_delay_seconds) as avg_lag
+    count(eval(ingest_delay_seconds<0 OR delay_category="Future timestamp")) as future_count
+    avg(healthy_seconds) as expected_healthy_seconds
+| eval avg_lag=round(coalesce(avg_lag,0),0)
+| eval expected_healthy_seconds=round(coalesce(expected_healthy_seconds,0),0)
+| eval avg_lag_display=case(
+    abs(avg_lag) < 60, tostring(avg_lag) . "s",
+    abs(avg_lag) < 3600, tostring(round(avg_lag/60,1)) . "m",
+    abs(avg_lag) < 86400, tostring(round(avg_lag/3600,1)) . "h",
+    true(), tostring(round(avg_lag/86400,1)) . "d"
 )
-| fields healthy_pct median_lag_display total_events healthy_events
+| eval expected_healthy_display=case(
+    expected_healthy_seconds < 60, tostring(expected_healthy_seconds) . "s",
+    expected_healthy_seconds < 3600, tostring(round(expected_healthy_seconds/60,1)) . "m",
+    expected_healthy_seconds < 86400, tostring(round(expected_healthy_seconds/3600,1)) . "h",
+    true(), tostring(round(expected_healthy_seconds/86400,1)) . "d"
+)
+| fields avg_lag avg_lag_display future_count expected_healthy_seconds expected_healthy_display total_events
     ]]></query>
   </search>
 
@@ -382,9 +422,10 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Traffic-light indicators for structure, consistency, CIM field overlap, delivery lag, and datamodel Current vs Potential counts.</p>
-              <p><strong>Why it matters:</strong> A strip is easier to scan than four 0–100 bars and points to what to investigate next in DIG IN.</p>
-              <p><strong>Read it as:</strong> An indicator, not a certification. Threshold bands are provisional until confirmed. Datamodel tile is Green when Current ≥ 1.</p>
+              <p><strong>What this shows:</strong> Traffic-light indicators for structure, consistency, CIM Alignment, delivery lag, and datamodel Current vs Potential counts.</p>
+              <p><strong>CIM Alignment:</strong> Of Field-scope fields (Recommended by default) for datamodels that already have at least one matching field in the sample, what share are present. Green = 100% covered. Amber = partial coverage. Red = no observed fields matched to any selected datamodel. Narrow the Datamodel filter to score a specific model.</p>
+              <p><strong>Delivery lag:</strong> Average ingest delay (_indextime − _time) for the sample. Expected lag comes from the <em>telemetry_timeliness_rules</em> lookup (per source / sourcetype / group, with dashboard defaults when no rule matches). Green = average lag within that expected healthy window (set <code>healthy_seconds=0</code> on a rule if you require zero average lag). Amber = average lag above expected. Red = any future timestamps in the sample. Configure datasource-specific expectations in that lookup rather than treating lag as a fixed global percentage.</p>
+              <p><strong>Read it as:</strong> An indicator, not a certification. Datamodel tile is Green when Current ≥ 1. Structure / Consistency bands remain provisional.</p>
             </div>
           </details>
         </div>

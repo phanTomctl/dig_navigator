@@ -16,23 +16,20 @@ require([
     "use strict";
 
     /*
-     * PROVISIONAL bands — confirm with product owner per tile before sign-off.
-     * Structure / Consistency: score 0-100
-     * CIM field overlap: percent of observed fields in selected field_scope
-     * Delivery lag: percent of sampled events in Healthy delay category
-     * Datamodel alignment: Current count >= 1 => green (requested)
+     * Structure / Consistency: score 0-100 (provisional numeric bands).
+     * CIM Alignment: rule-based (not numeric cutovers) — see bandCimAlignment().
+     * Delivery lag: rule-based vs lookup expected healthy lag — see bandDeliveryLag().
+     * Datamodel alignment: Current count >= 1 => green.
      */
     var THRESHOLDS = {
         structure: { green: 70, amber: 40 },
-        consistency: { green: 70, amber: 40 },
-        cim_overlap: { green: 40, amber: 20 },
-        delivery_lag: { green: 80, amber: 50 }
+        consistency: { green: 70, amber: 40 }
     };
 
     var TILE_ORDER = [
         "structure",
         "consistency",
-        "cim_overlap",
+        "cim_alignment",
         "delivery_lag",
         "datamodel_alignment"
     ];
@@ -40,7 +37,7 @@ require([
     var state = {
         structure: null,
         consistency: null,
-        cim_overlap: null,
+        cim_alignment: null,
         delivery_lag: null,
         datamodel_alignment: null
     };
@@ -57,6 +54,55 @@ require([
             return "amber";
         }
         return "red";
+    }
+
+    /*
+     * Green: 100% of Field-scope fields covered for datamodels with evidence.
+     * Amber: some coverage but below 100%.
+     * Red: no observed fields matched to any selected datamodel.
+     */
+    function bandCimAlignment(row) {
+        if (!row) {
+            return "pending";
+        }
+        var anyMatch = Number(row.any_dm_match || 0);
+        var pct = Number(row.cim_alignment_pct);
+        if (!anyMatch || !isFinite(pct) || Number(row.matched_scope_fields || 0) === 0) {
+            return "red";
+        }
+        if (pct >= 100) {
+            return "green";
+        }
+        return "amber";
+    }
+
+    /*
+     * Uses telemetry_timeliness_rules healthy_seconds (via base_timeliness_evidence).
+     * Green: no future timestamps AND average lag within expected healthy lag
+     *        (set healthy_seconds=0 on a rule to require zero average lag).
+     * Amber: average lag above expected, no future timestamps.
+     * Red: any future timestamps in the sample.
+     */
+    function bandDeliveryLag(row) {
+        if (!row) {
+            return "pending";
+        }
+        var futureCount = Number(row.future_count || 0);
+        var avgLag = Number(row.avg_lag);
+        var expected = Number(row.expected_healthy_seconds);
+        if (!isFinite(avgLag)) {
+            return "pending";
+        }
+        if (!isFinite(expected)) {
+            expected = 0;
+        }
+        if (futureCount > 0) {
+            return "red";
+        }
+        if (avgLag <= expected) {
+            return "green";
+        }
+        return "amber";
     }
 
     function statusLabel(band) {
@@ -150,23 +196,39 @@ require([
             band: bandFromScore(consistencyScore, THRESHOLDS.consistency)
         });
 
-        var cimPct = state.cim_overlap && state.cim_overlap.cim_overlap_pct;
+        var cim = state.cim_alignment;
+        var cimPct = cim && cim.cim_alignment_pct;
+        var cimMatched = cim && cim.matched_scope_fields;
+        var cimTotal = cim && cim.total_scope_fields;
+        var cimSub = "Field-scope coverage for matched datamodels";
+        if (cimMatched != null && cimTotal != null) {
+            cimSub = cimMatched + " / " + cimTotal + " scope fields · matched models only";
+        }
         tiles.push({
-            id: "cim_overlap",
-            label: "CIM field overlap",
+            id: "cim_alignment",
+            label: "CIM Alignment",
             value: cimPct != null ? cimPct + "%" : "—",
-            sub: "Observed fields in selected Field scope",
-            band: bandFromScore(cimPct, THRESHOLDS.cim_overlap)
+            sub: cimSub,
+            band: bandCimAlignment(cim)
         });
 
-        var healthyPct = state.delivery_lag && state.delivery_lag.healthy_pct;
-        var medianLag = state.delivery_lag && state.delivery_lag.median_lag_display;
+        var lag = state.delivery_lag;
+        var lagDisplay = lag && lag.avg_lag_display;
+        var expectedDisplay = lag && lag.expected_healthy_display;
+        var futureCount = lag && lag.future_count;
+        var lagSub = "Average ingest delay vs lookup expected lag";
+        if (expectedDisplay) {
+            lagSub = "Expected ≤ " + expectedDisplay + " (telemetry_timeliness_rules)";
+            if (Number(futureCount) > 0) {
+                lagSub = futureCount + " future timestamp event(s) · " + lagSub;
+            }
+        }
         tiles.push({
             id: "delivery_lag",
             label: "Delivery lag",
-            value: healthyPct != null ? healthyPct + "%" : "—",
-            sub: medianLag ? ("Healthy events · median " + medianLag) : "Share of events within healthy lag",
-            band: bandFromScore(healthyPct, THRESHOLDS.delivery_lag)
+            value: lagDisplay != null ? lagDisplay : "—",
+            sub: lagSub,
+            band: bandDeliveryLag(lag)
         });
 
         var currentCount = state.datamodel_alignment && state.datamodel_alignment.current_dm_count;
@@ -204,7 +266,7 @@ require([
         }
         var tiles = buildTiles();
         var html = '<div class="dig-snapshot-wrap">';
-        html += '<p class="dig-snapshot-banner"><strong>Snapshot Lab</strong> — indicator strip for the selected analysis scope. Not a certification. Thresholds are provisional.</p>';
+        html += '<p class="dig-snapshot-banner"><strong>Snapshot Lab</strong> — indicator strip for the selected analysis scope. Not a certification.</p>';
         html += '<div class="dig-snapshot-grid">';
         TILE_ORDER.forEach(function(id) {
             var tile = tiles.filter(function(t) { return t.id === id; })[0];
@@ -221,8 +283,8 @@ require([
         state.consistency = row;
     });
 
-    bindSearch("tile_cim_overlap", function(row) {
-        state.cim_overlap = row;
+    bindSearch("tile_cim_alignment", function(row) {
+        state.cim_alignment = row;
     });
 
     bindSearch("tile_delivery_lag", function(row) {
