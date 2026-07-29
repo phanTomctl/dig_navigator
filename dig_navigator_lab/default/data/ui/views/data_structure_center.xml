@@ -56,7 +56,7 @@ $base_search$
 
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
-      <default>5000</default>
+      <default>1000</default>
     </input>
 
   </fieldset>
