@@ -182,7 +182,7 @@ $base_search$
 
   <row>
     <panel>
-      <title>Detected Structure Type Distribution</title>
+      <title>Data Structure Distribution</title>
       <html>
         <div class="context-toggle">
           <details>
