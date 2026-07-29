@@ -199,17 +199,17 @@ $base_search$
         <search base="base_structure_center">
           <query><![CDATA[
 | stats count as events by group_value primary_structure
-| eventstats sum(events) as total_events by group_value
-| eval structure_pct=round((events/total_events)*100,2)
 | rename group_value as "Data Source"
-| chart sum(structure_pct) over "Data Source" by primary_structure
+| chart sum(events) over "Data Source" by primary_structure
           ]]></query>
         </search>
         <option name="charting.chart">column</option>
         <option name="charting.legend.placement">right</option>
-        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.axisY.minimumNumber">0</option>
+        <option name="charting.axisY.maximumNumber">100</option>
         <option name="charting.axisTitleX.text">Selected Data Source</option>
-        <option name="charting.axisTitleY.text">Percent of sampled events by detected structure type</option>
+        <option name="charting.axisTitleY.text">Percent of sampled events</option>
         <option name="charting.seriesColors">[#7dff9a,#00e5ff,#ffc857,#ff4fd8,#9fb5ac,#ff6b6b]</option>
       </chart>
     </panel>
