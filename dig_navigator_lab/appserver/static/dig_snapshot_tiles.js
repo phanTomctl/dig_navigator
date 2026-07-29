@@ -5,11 +5,9 @@
  *   1. stylesheet="...,dig_snapshot_tiles.css" script="...,dig_snapshot_tiles.js"
  *   2. Provide base_sample / base_structure / base_timeliness_evidence (DI token pattern)
  *   3. Tokens: datamodel_filter, field_scope
- *   4. Hidden/post-process searches via macros in default/macros.conf:
- *        tile_structure_consistency -> `dig_tile_structure_consistency`
- *        tile_cim_alignment         -> `dig_tile_cim_alignment("$datamodel_filter$","$field_scope$")`
- *        tile_delivery_lag          -> `dig_tile_delivery_lag`
- *        tile_datamodel_alignment   -> `dig_tile_datamodel_alignment("$datamodel_filter$","$field_scope$")`
+ *   4. Copy the four <search id="tile_*"> blocks from data_intelligence.xml
+ *      (tile_structure_consistency, tile_cim_alignment, tile_delivery_lag,
+ *       tile_datamodel_alignment) — keep SPL there as the single source of truth
  *   5. Mount: <div id="dig-snapshot-tiles"></div>
  *
  * Performance: no timers/polling. Listens only to SimpleXML search managers.
@@ -132,11 +130,32 @@ require([
         if (!data || !data.rows || !data.rows.length || !data.fields) {
             return null;
         }
+        var raw = data.rows[0];
         var row = {};
+        if (raw && !Array.isArray(raw) && typeof raw === "object") {
+            data.fields.forEach(function(field) {
+                if (Object.prototype.hasOwnProperty.call(raw, field)) {
+                    row[field] = raw[field];
+                }
+            });
+            return row;
+        }
         data.fields.forEach(function(field, idx) {
-            row[field] = data.rows[0][idx];
+            row[field] = raw[idx];
         });
         return row;
+    }
+
+    function fieldVal(row, names) {
+        if (!row) {
+            return null;
+        }
+        for (var i = 0; i < names.length; i++) {
+            if (row[names[i]] != null && row[names[i]] !== "") {
+                return row[names[i]];
+            }
+        }
+        return null;
     }
 
     function bindSearch(id, handler) {
@@ -184,7 +203,7 @@ require([
     function buildTiles() {
         var tiles = [];
 
-        var structureScore = state.structure && state.structure.Structure;
+        var structureScore = fieldVal(state.structure, ["Structure", "structure"]);
         tiles.push({
             id: "structure",
             label: "Structure",
@@ -193,7 +212,7 @@ require([
             band: bandFromScore(structureScore, THRESHOLDS.structure)
         });
 
-        var consistencyScore = state.consistency && state.consistency.Consistency;
+        var consistencyScore = fieldVal(state.consistency, ["Consistency", "consistency"]);
         tiles.push({
             id: "consistency",
             label: "Consistency",
@@ -203,9 +222,9 @@ require([
         });
 
         var cim = state.cim_alignment;
-        var cimPct = cim && cim.cim_alignment_pct;
-        var cimMatched = cim && cim.matched_scope_fields;
-        var cimTotal = cim && cim.total_scope_fields;
+        var cimPct = fieldVal(cim, ["cim_alignment_pct"]);
+        var cimMatched = fieldVal(cim, ["matched_scope_fields"]);
+        var cimTotal = fieldVal(cim, ["total_scope_fields"]);
         var cimSub = "Field-scope coverage for matched datamodels";
         if (cimMatched != null && cimTotal != null) {
             cimSub = cimMatched + " / " + cimTotal + " scope fields · matched models only";
@@ -219,9 +238,9 @@ require([
         });
 
         var lag = state.delivery_lag;
-        var lagDisplay = lag && lag.avg_lag_display;
-        var expectedDisplay = lag && lag.expected_healthy_display;
-        var futureCount = lag && lag.future_count;
+        var lagDisplay = fieldVal(lag, ["avg_lag_display"]);
+        var expectedDisplay = fieldVal(lag, ["expected_healthy_display"]);
+        var futureCount = fieldVal(lag, ["future_count"]);
         var lagSub = "Average ingest delay vs lookup expected lag";
         if (expectedDisplay) {
             lagSub = "Expected ≤ " + expectedDisplay + " (telemetry_timeliness_rules)";
@@ -237,8 +256,8 @@ require([
             band: bandDeliveryLag(lag)
         });
 
-        var currentCount = state.datamodel_alignment && state.datamodel_alignment.current_dm_count;
-        var potentialCount = state.datamodel_alignment && state.datamodel_alignment.potential_dm_count;
+        var currentCount = fieldVal(state.datamodel_alignment, ["current_dm_count"]);
+        var potentialCount = fieldVal(state.datamodel_alignment, ["potential_dm_count"]);
         var dmBand = "pending";
         if (currentCount != null || potentialCount != null) {
             var cur = Number(currentCount || 0);

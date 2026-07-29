@@ -19,10 +19,6 @@ export = system
 access = read : [ * ], write : [ admin, sc_admin ]
 export = system
 
-[macros]
-access = read : [ * ], write : [ admin, sc_admin ]
-export = system
-
 [collections]
 access = read : [ * ], write : [ admin, sc_admin ]
 export = system

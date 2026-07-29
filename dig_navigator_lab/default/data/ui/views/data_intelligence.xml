@@ -254,18 +254,183 @@ $base_search$
     ]]></query>
   </search>
 
-  <!-- Shared snapshot tile feeders (SPL in macros.conf; UI in dig_snapshot_tiles.js) -->
+  <!-- Shared snapshot tile feeders (UI: dig_snapshot_tiles.js / dig_snapshot_tiles.css).
+       Copy these four <search id="tile_*"> blocks when adding the strip to another dashboard. -->
   <search id="tile_structure_consistency" base="base_structure">
-    <query><![CDATA[`dig_tile_structure_consistency`]]></query>
+    <query><![CDATA[
+| eval structure_score=round(structure_ratio*100,0)
+| eval consistency_score=round(max(0,min(100,100-(shape_ratio*100)-(length_variance*25))),0)
+| stats avg(structure_score) as Structure avg(consistency_score) as Consistency
+| eval Structure=round(Structure,0), Consistency=round(Consistency,0)
+| fields Structure Consistency
+    ]]></query>
   </search>
   <search id="tile_cim_alignment" base="base_sample">
-    <query><![CDATA[`dig_tile_cim_alignment("$datamodel_filter$","$field_scope$")`]]></query>
+    <query><![CDATA[
+| fieldsummary maxvals=1
+| rename field as field_name
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint|group_value|tag)$")
+| eval in_sample=1
+| fields field_name in_sample
+| append [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | eval from_lookup=1
+    | fields field_name datamodel from_lookup
+]
+| stats
+    max(in_sample) as in_sample
+    max(from_lookup) as from_lookup
+    values(datamodel) as datamodels
+    by field_name
+| eval matched_field=if(in_sample=1 AND from_lookup=1,1,0)
+| eventstats max(matched_field) as any_dm_match
+| where from_lookup=1
+| mvexpand datamodels
+| rename datamodels as datamodel
+| eventstats max(matched_field) as model_has_evidence by datamodel
+| stats
+    dc(eval(if(model_has_evidence=1,field_name,null()))) as total_scope_fields
+    dc(eval(if(model_has_evidence=1 AND matched_field=1,field_name,null()))) as matched_scope_fields
+    max(any_dm_match) as any_dm_match
+    dc(eval(if(model_has_evidence=1,datamodel,null()))) as models_with_evidence
+| eval total_scope_fields=coalesce(total_scope_fields,0)
+| eval matched_scope_fields=coalesce(matched_scope_fields,0)
+| eval any_dm_match=coalesce(any_dm_match,0)
+| eval models_with_evidence=coalesce(models_with_evidence,0)
+| eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
+| fields cim_alignment_pct matched_scope_fields total_scope_fields any_dm_match models_with_evidence
+    ]]></query>
   </search>
   <search id="tile_delivery_lag" base="base_timeliness_evidence">
-    <query><![CDATA[`dig_tile_delivery_lag`]]></query>
+    <query><![CDATA[
+| stats
+    count as total_events
+    avg(ingest_delay_seconds) as avg_lag
+    count(eval(ingest_delay_seconds<0 OR delay_category="Future timestamp")) as future_count
+    avg(healthy_seconds) as expected_healthy_seconds
+| eval avg_lag=round(coalesce(avg_lag,0),0)
+| eval expected_healthy_seconds=round(coalesce(expected_healthy_seconds,0),0)
+| eval avg_lag_display=case(
+    abs(avg_lag) < 60, tostring(avg_lag) . "s",
+    abs(avg_lag) < 3600, tostring(round(avg_lag/60,1)) . "m",
+    abs(avg_lag) < 86400, tostring(round(avg_lag/3600,1)) . "h",
+    true(), tostring(round(avg_lag/86400,1)) . "d"
+)
+| eval expected_healthy_display=case(
+    expected_healthy_seconds < 60, tostring(expected_healthy_seconds) . "s",
+    expected_healthy_seconds < 3600, tostring(round(expected_healthy_seconds/60,1)) . "m",
+    expected_healthy_seconds < 86400, tostring(round(expected_healthy_seconds/3600,1)) . "h",
+    true(), tostring(round(expected_healthy_seconds/86400,1)) . "d"
+)
+| fields avg_lag avg_lag_display future_count expected_healthy_seconds expected_healthy_display total_events
+    ]]></query>
   </search>
   <search id="tile_datamodel_alignment" base="base_sample">
-    <query><![CDATA[`dig_tile_datamodel_alignment("$datamodel_filter$","$field_scope$")`]]></query>
+    <query><![CDATA[
+| eventstats values(tag) as observed_tags
+| fields observed_tags *
+| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
+| untable observed_tags field_name field_value
+| where isnotnull(field_value)
+| eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where field_name!="observed_tags"
+| stats count as field_instances values(observed_tags) as observed_tags by field_name
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | fields datamodel field_name scope_field
+]
+| stats
+    dc(field_name) as matched_scope_fields
+    values(observed_tags) as observed_tags
+    by datamodel
+| join type=left max=0 datamodel [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
+    | stats dc(field_name) as total_scope_fields by datamodel
+]
+| eval datamodel_key=case(
+    lower(datamodel)="inventory","Compute_Inventory",
+    lower(datamodel)="java virtual machines","JVM",
+    true(),replace(datamodel," ","_")
+  )
+| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
+| join type=left max=0 datamodel_key [
+    | inputlookup cim_datamodel_tags_lookup
+    | eval datamodel_key=case(
+        lower(datamodel)="inventory","Compute_Inventory",
+        lower(datamodel)="java virtual machines","JVM",
+        true(),replace(datamodel," ","_")
+      )
+    | eval expected_tag=lower(trim(expected_tag))
+    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
+    | eval coverage_set=coalesce(coverage_set,"_default")
+    | where tag_role="top_level"
+    | fields datamodel_key expected_tag tag_role coverage_set
+]
+| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
+| stats
+    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
+    max(matched_scope_fields) as matched_scope_fields
+    max(total_scope_fields) as total_scope_fields
+    by datamodel coverage_set
+| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
+| stats
+    max(set_complete) as top_level_tag_observed
+    max(matched_scope_fields) as matched_scope_fields
+    max(total_scope_fields) as total_scope_fields
+    by datamodel
+| eval field_alignment_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
+| eval current_alignment_pct=if(top_level_tag_observed=1,field_alignment_pct,0)
+| eval potential_alignment_pct=if(top_level_tag_observed=0,field_alignment_pct,0)
+| where current_alignment_pct>0 OR potential_alignment_pct>0
+| stats
+    sum(eval(if(current_alignment_pct>0,1,0))) as current_dm_count
+    sum(eval(if(potential_alignment_pct>0,1,0))) as potential_dm_count
+| eval current_dm_count=coalesce(current_dm_count,0)
+| eval potential_dm_count=coalesce(potential_dm_count,0)
+| fields current_dm_count potential_dm_count
+    ]]></query>
   </search>
 
   <row>
