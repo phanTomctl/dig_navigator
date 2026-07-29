@@ -1,12 +1,18 @@
 /*
- * DIG Snapshot Lab — custom HTML/JS tile strip prototype.
+ * DIG Data Quality Snapshot — shared HTML/JS tile strip.
  *
- * Isolation: used only by data_quality_snapshot_lab.xml.
- * Migration: add this script + dig_snapshot_tiles.css to data_intelligence.xml,
- * copy the HTML mount + tile_* searches, then remove the lab view from nav.
+ * Reuse on any dashboard:
+ *   1. stylesheet="...,dig_snapshot_tiles.css" script="...,dig_snapshot_tiles.js"
+ *   2. Provide base_sample / base_structure / base_timeliness_evidence (DI token pattern)
+ *   3. Tokens: datamodel_filter, field_scope
+ *   4. Hidden/post-process searches via macros in default/macros.conf:
+ *        tile_structure_consistency -> `dig_tile_structure_consistency`
+ *        tile_cim_alignment         -> `dig_tile_cim_alignment("$datamodel_filter$","$field_scope$")`
+ *        tile_delivery_lag          -> `dig_tile_delivery_lag`
+ *        tile_datamodel_alignment   -> `dig_tile_datamodel_alignment("$datamodel_filter$","$field_scope$")`
+ *   5. Mount: <div id="dig-snapshot-tiles"></div>
  *
- * Performance: no timers/polling. Listens only to SimpleXML search managers
- * that already run from shared base_sample / base_structure / base_timeliness.
+ * Performance: no timers/polling. Listens only to SimpleXML search managers.
  */
 require([
     "jquery",
@@ -266,7 +272,13 @@ require([
         }
         var tiles = buildTiles();
         var html = '<div class="dig-snapshot-wrap">';
-        html += '<p class="dig-snapshot-banner"><strong>Snapshot Lab</strong> — indicator strip for the selected analysis scope. Not a certification.</p>';
+        html += '<div class="context-toggle"><details><summary>Why This Matters</summary><div class="context-panel">';
+        html += "<p><strong>What this shows:</strong> Traffic-light indicators for structure, consistency, CIM Alignment, delivery lag, and datamodel Current vs Potential counts.</p>";
+        html += "<p><strong>CIM Alignment:</strong> Of Field-scope fields (Recommended by default) for datamodels that already have at least one matching field in the sample, what share are present. Green = 100% covered. Amber = partial coverage. Red = no observed fields matched to any selected datamodel. Narrow the Datamodel filter to score a specific model.</p>";
+        html += "<p><strong>Delivery lag:</strong> Average ingest delay (_indextime − _time) for the sample. Expected lag comes from the <em>telemetry_timeliness_rules</em> lookup (per source / sourcetype / group, with dashboard defaults when no rule matches). Green = average lag within that expected healthy window (set <code>healthy_seconds=0</code> on a rule if you require zero average lag). Amber = average lag above expected. Red = any future timestamps in the sample.</p>";
+        html += "<p><strong>Read it as:</strong> An indicator, not a certification. Datamodel tile is Green when Current ≥ 1. Structure / Consistency bands remain provisional. Use DIG IN panels for supporting evidence.</p>";
+        html += "</div></details></div>";
+        html += '<p class="dig-snapshot-banner">Indicator strip for the selected analysis scope. Not a certification.</p>';
         html += '<div class="dig-snapshot-grid">';
         TILE_ORDER.forEach(function(id) {
             var tile = tiles.filter(function(t) { return t.id === id; })[0];

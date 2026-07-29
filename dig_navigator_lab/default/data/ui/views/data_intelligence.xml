@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+<dashboard script="dig_analysis_scope_kv.js,dig_snapshot_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
   <label>Data Intelligence</label>
 
   <fieldset submitButton="false" autoRun="false">
@@ -22,11 +22,32 @@
       <default>sourcetype</default>
     </input>
 
-  
-
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
       <default>1000</default>
+    </input>
+
+    <input type="multiselect" token="datamodel_filter" searchWhenChanged="true">
+      <label>Datamodel</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <fieldForLabel>datamodel</fieldForLabel>
+      <fieldForValue>datamodel</fieldForValue>
+      <search>
+        <query><![CDATA[
+| inputlookup datamodel_fields_lookup
+| stats count by datamodel
+| sort datamodel
+        ]]></query>
+      </search>
+      <delimiter>|</delimiter>
+    </input>
+
+    <input type="dropdown" token="field_scope" searchWhenChanged="true">
+      <label>Field scope</label>
+      <choice value="recommended">Recommended fields</choice>
+      <choice value="all">All datamodel fields</choice>
+      <default>recommended</default>
     </input>
 
   </fieldset>
@@ -233,6 +254,19 @@ $base_search$
     ]]></query>
   </search>
 
+  <!-- Shared snapshot tile feeders (SPL in macros.conf; UI in dig_snapshot_tiles.js) -->
+  <search id="tile_structure_consistency" base="base_structure">
+    <query><![CDATA[`dig_tile_structure_consistency`]]></query>
+  </search>
+  <search id="tile_cim_alignment" base="base_sample">
+    <query><![CDATA[`dig_tile_cim_alignment("$datamodel_filter$","$field_scope$")`]]></query>
+  </search>
+  <search id="tile_delivery_lag" base="base_timeliness_evidence">
+    <query><![CDATA[`dig_tile_delivery_lag`]]></query>
+  </search>
+  <search id="tile_datamodel_alignment" base="base_sample">
+    <query><![CDATA[`dig_tile_datamodel_alignment("$datamodel_filter$","$field_scope$")`]]></query>
+  </search>
 
   <row>
     <panel>
@@ -254,66 +288,8 @@ $base_search$
     <panel>
       <title>Data Quality Snapshot</title>
       <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why This Matters</summary>
-            <div class="context-panel">
-            <p><strong>What this shows:</strong> A quality indicator derived from observed structure, consistency and CIM alignment characteristics.</p>
-            <p><strong>Why it matters:</strong> Data that is easier to interpret, classify and align is generally easier to operationalise, govern and investigate.</p>
-            <p><strong>Read it as:</strong> This is an indicator, not a certification. Use it as a starting point for investigation and review the supporting evidence in DIG IN: Data Quality before drawing conclusions.</p>
-            </div>
-          </details>
-        </div>
+        <div id="dig-snapshot-tiles"></div>
       </html>
-      <chart>
-        <search base="base_structure">
-          <query><![CDATA[
-| eval structure_score=round(structure_ratio*100,0)
-| eval consistency_score=round(max(0,min(100,100-(shape_ratio*100)-(length_variance*25))),0)
-| stats avg(structure_score) as Structure avg(consistency_score) as Consistency
-| eval Structure=round(Structure,0), Consistency=round(Consistency,0)
-| appendcols [
-    search $base_search$
-    | head $sample_limit$
-    | fieldsummary maxvals=1
-    | rename field as field_name
-    | eval field_name=lower(trim(field_name))
-    | where NOT match(field_name,"^_")
-    | where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint)$")
-    | stats dc(field_name) as current_fields
-    | appendcols [
-        search $base_search$
-        | head $sample_limit$
-        | fieldsummary maxvals=1
-        | rename field as field_name
-        | eval field_name=lower(trim(field_name))
-        | where NOT match(field_name,"^_")
-        | where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint)$")
-        | join type=inner max=0 field_name [
-            | inputlookup datamodel_fields_lookup
-            | eval field_name=lower(trim(field_name))
-            | fields field_name
-        ]
-        | stats dc(field_name) as matched_dm_fields
-    ]
-    | eval "CIM Alignment"=round(if(current_fields>0,(matched_dm_fields/current_fields)*100,0),0)
-    | fields "CIM Alignment"
-]
-| eval Overall=round((Structure+Consistency+'CIM Alignment')/3,0)
-| table Overall Structure Consistency "CIM Alignment"
-| transpose 0 column_name="Quality Dimension"
-| rename "row 1" as "Score"
-          ]]></query>
-        </search>
-        <option name="charting.chart">column</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Quality Dimension</option>
-        <option name="charting.axisTitleY.text">Score out of 100</option>
-        <option name="charting.seriesColors">[#00e5ff]</option>
-        <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/data_quality_center?form.base_search=$form.base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$form.group_by|u$&form.selected_group=*&form.sample_limit=$form.sample_limit|u$]]></link>
-        </drilldown>
-      </chart>
     </panel>
   </row>
 
@@ -509,30 +485,6 @@ $base_search$
         </div>
       </html>
 
-      <input type="multiselect" token="datamodel_filter" searchWhenChanged="true">
-        <label>Datamodel</label>
-        <choice value="*">All</choice>
-        <default>*</default>
-        <fieldForLabel>datamodel</fieldForLabel>
-        <fieldForValue>datamodel</fieldForValue>
-        <search>
-          <query><![CDATA[
-| inputlookup datamodel_fields_lookup
-| stats count by datamodel
-| sort datamodel
-          ]]></query>
-        </search>
-        <delimiter>|</delimiter>
-      </input>
-
-
-
-      <input type="dropdown" token="field_scope" searchWhenChanged="true">
-        <label>Field scope</label>
-        <choice value="recommended">Recommended fields</choice>
-        <choice value="all">All datamodel fields</choice>
-        <default>recommended</default>
-      </input>
       <input type="dropdown" token="dm_perspective" searchWhenChanged="true">
         <label>Datamodel perspective</label>
         <choice value="potential">Potential Alignment</choice>
