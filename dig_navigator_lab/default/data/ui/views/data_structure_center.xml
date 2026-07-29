@@ -217,7 +217,7 @@ $base_search$
 
   <row>
     <panel>
-      <title>Classification Evidence</title>
+      <title>Structure Classification Evidence</title>
       <html>
         <div class="context-toggle">
           <details>
@@ -250,8 +250,16 @@ $base_search$
 | eval length_variance=round(length_variance,4)
 | eval avg_raw_len=round(avg_raw_len,2)
 | rename group_value as "Data Source"
-| rename detected_structure_types_seen as "Detected Structure Types Seen"
-| table "Data Source" Classification Classification_Confidence "Detected Structure Types Seen" total_events_in_group sampled_events structure_ratio shape_ratio length_variance distinct_shapes avg_raw_len
+| rename Classification_Confidence as "Confidence"
+| rename detected_structure_types_seen as "Formats Seen"
+| rename total_events_in_group as "Group Events"
+| rename sampled_events as "Sampled Events"
+| rename structure_ratio as "Structure Ratio"
+| rename shape_ratio as "Shape Ratio"
+| rename length_variance as "Length Variance"
+| rename distinct_shapes as "Distinct Shapes"
+| rename avg_raw_len as "Avg Length"
+| table "Data Source" Classification Confidence "Formats Seen" "Group Events" "Sampled Events" "Structure Ratio" "Shape Ratio" "Length Variance" "Distinct Shapes" "Avg Length"
 | sort "Data Source"
           ]]></query>
         </search>
