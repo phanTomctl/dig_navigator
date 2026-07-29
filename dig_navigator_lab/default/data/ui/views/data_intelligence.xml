@@ -151,7 +151,14 @@ $base_search$
     | stats max(model_field) as model_field by field_name datamodel
     | rename datamodel as datamodels
 ]
-| eval in_datamodel=if(isnotnull(datamodels),1,0)
+| stats
+    max(field_instances) as field_instances
+    values(observed_tags) as observed_tags
+    max(events_checked) as events_checked
+    max(model_field) as model_field
+    max(eval(if(isnotnull(datamodels),1,0))) as in_datamodel
+    values(datamodels) as datamodels
+    by group_value field_name
 | eval keep_field=case(
     "$field_scope$"="all" AND in_datamodel=1, 1,
     "$field_scope$"="recommended" AND model_field=1, 1,
@@ -849,9 +856,9 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-            <p><strong>What this shows:</strong> Detailed field-level evidence supporting the field utilisation model for each selected source population.</p>
-            <p><strong>Why it matters:</strong> Reviewing field-level evidence provides transparency into how utilisation indicators and reduction estimates were produced.</p>
-            <p><strong>Read it as:</strong> This view exists to support investigation and understanding. It should not be interpreted as a directive to remove fields or change ingestion behaviour.</p>
+            <p><strong>What this shows:</strong> The same field-reduction breakdown as the charts above, summarised per data source.</p>
+            <p><strong>Why it matters:</strong> These columns should add up: Data Fields = Matched DM Fields + Non-matched Fields.</p>
+            <p><strong>Read it as:</strong> Matched DM Fields are observed fields inside the selected Field scope. Non-matched Fields are outside that scope. Matched Datamodels counts distinct CIM datamodels touched by the matched fields only.</p>
           </div>
           </details>
         </div>
@@ -863,8 +870,9 @@ $base_search$
     dc(field_name) as current_fields
     dc(eval(if(would_drop=1,field_name,null()))) as dropped_fields
     dc(eval(if(keep_field=1,field_name,null()))) as future_fields
-    dc(eval(if(in_datamodel=1,datamodels,null()))) as matched_datamodels
+    values(eval(if(keep_field=1,datamodels,null()))) as matched_dm_list
     by group_value
+| eval matched_datamodels=mvcount(mvdedup(matched_dm_list))
 | eval field_reduction_pct=if(current_fields>0,round((dropped_fields/current_fields)*100,2),0)
 | rename group_value as "Data Source"
 | rename current_fields as "Data Fields"
@@ -872,7 +880,7 @@ $base_search$
 | rename future_fields as "Matched DM Fields"
 | rename matched_datamodels as "Matched Datamodels"
 | rename field_reduction_pct as "Field Reduction %"
-| table "Data Source" "Data Fields" "Non-matched Fields" "Matched DM Fields" "Matched Datamodels" "Field Reduction %"
+| table "Data Source" "Data Fields" "Matched DM Fields" "Non-matched Fields" "Matched Datamodels" "Field Reduction %"
 | sort - "Field Reduction %"
           ]]></query>
         </search>
