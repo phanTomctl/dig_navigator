@@ -8,8 +8,11 @@
  * Design notes:
  * - No dependency on splunkjs/mvc/simplexml/submit; that module is not present in
  *   some Splunk 10 builds and can break dashboard loading.
- * - URL/drilldown tokens override saved KV scope only when they differ from the
- *   safe dashboard defaults.
+ * - Shared form.* scope tokens alone are NOT treated as drilldown overrides.
+ *   Splunk SimpleXML often rewrites them into the URL after Apply Scope; that must
+ *   still auto-load the saved per-user KV scope.
+ * - URL scope is applied only after KV restore when a DIG IN drilldown token
+ *   carries a specific non-wildcard value (not dashboard-local filters).
  * - Scope is applied to default and submitted token models, then searches are
  *   restarted defensively for direct dashboard opens.
  */
@@ -26,7 +29,7 @@ require([
         earliest: "-24h",
         latest: "now",
         group_by: "sourcetype",
-        sample_limit: "5000"
+        sample_limit: "1000"
     };
 
     var MAX_SAMPLE_LIMIT = 100000;
@@ -106,32 +109,59 @@ require([
         return scope;
     }
 
-    function getUrlScopeIfMeaningful() {
-        var params = parseQuery();
+    function scopesEqual(left, right) {
+        left = normaliseScope(left);
+        right = normaliseScope(right);
+        return left.base_search === right.base_search &&
+            left.earliest === right.earliest &&
+            left.latest === right.latest &&
+            left.group_by === right.group_by &&
+            left.sample_limit === right.sample_limit;
+    }
+
+    function isWildcardDrilldownValue(value) {
+        if (value === null || value === undefined) {
+            return true;
+        }
+        value = String(value).trim();
+        return value === "" || value === "*";
+    }
+
+    function hasMeaningfulDrilldownContext(params) {
+        // Center dashboards persist wildcard defaults such as selected_group=* in
+        // the URL. Only treat the page as a drilldown when a context token carries
+        // a specific value that should override the saved Analysis Scope.
+        // DIG IN center drilldown tokens only. Do not include filters that also
+        // exist on top-level dashboards (framework_filter, datamodel_filter).
+        var markerGroups = [
+            ["form.selected_group", "selected_group"],
+            ["form.classification", "classification"],
+            ["form.selected_delay_category", "selected_delay_category"],
+            ["form.selected_timestamp_indicator", "selected_timestamp_indicator"],
+            ["form.capability_filter", "capability_filter"],
+            ["form.coverage_filter", "coverage_filter"],
+            ["form.governance_relevance_filter", "governance_relevance_filter"],
+            ["form.tier_filter", "tier_filter"],
+            ["form.retention_filter", "retention_filter"]
+        ];
+
+        for (var i = 0; i < markerGroups.length; i++) {
+            var value = getQueryValue(params, markerGroups[i]);
+            if (!isWildcardDrilldownValue(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getUrlScopeFromParams(params) {
         var baseSearch = getQueryValue(params, ["form.base_search", "base_search"]);
         var earliest = getQueryValue(params, ["form.time_range.earliest", "time_range.earliest", "earliest"]);
         var latest = getQueryValue(params, ["form.time_range.latest", "time_range.latest", "latest"]);
         var groupBy = getQueryValue(params, ["form.group_by", "group_by"]);
         var sampleLimit = getQueryValue(params, ["form.sample_limit", "sample_limit"]);
 
-        var meaningful = false;
-        if (baseSearch && baseSearch !== DEFAULT_SCOPE.base_search) {
-            meaningful = true;
-        }
-        if (earliest && earliest !== DEFAULT_SCOPE.earliest) {
-            meaningful = true;
-        }
-        if (latest && latest !== DEFAULT_SCOPE.latest) {
-            meaningful = true;
-        }
-        if (groupBy && groupBy !== DEFAULT_SCOPE.group_by) {
-            meaningful = true;
-        }
-        if (sampleLimit && normaliseLimit(sampleLimit) !== DEFAULT_SCOPE.sample_limit) {
-            meaningful = true;
-        }
-
-        if (!meaningful) {
+        if (!baseSearch && !earliest && !latest && !groupBy && !sampleLimit) {
             return null;
         }
 
@@ -142,6 +172,24 @@ require([
             group_by: groupBy || DEFAULT_SCOPE.group_by,
             sample_limit: sampleLimit || DEFAULT_SCOPE.sample_limit
         });
+    }
+
+    function getUrlScopeIfMeaningful() {
+        var params = parseQuery();
+        if (!hasMeaningfulDrilldownContext(params)) {
+            return null;
+        }
+        return getUrlScopeFromParams(params);
+    }
+
+    function applyDrilldownScopeFromUrl() {
+        var urlScope = getUrlScopeIfMeaningful();
+        if (!urlScope) {
+            return false;
+        }
+        setScopeTokens(urlScope);
+        updateStatus("Using drilldown scope. Click Apply Scope to save it.", false);
+        return true;
     }
 
     function getToken(primary, fallback, defaultValue) {
@@ -262,6 +310,20 @@ require([
         refreshSearches();
     }
 
+    function scheduleScopeReapply(scope, attemptsRemaining) {
+        if (!attemptsRemaining || attemptsRemaining < 1) {
+            return;
+        }
+
+        window.setTimeout(function() {
+            var current = readCurrentScope();
+            if (!scopesEqual(current, scope)) {
+                setScopeTokens(scope);
+            }
+            scheduleScopeReapply(scope, attemptsRemaining - 1);
+        }, 500);
+    }
+
     function updateVisibleInputs(scope) {
         getInputComponents().forEach(function(item) {
             try {
@@ -370,14 +432,7 @@ require([
         }
     }
 
-    function loadScope(forceSaved) {
-        var urlScope = getUrlScopeIfMeaningful();
-        if (urlScope && !forceSaved) {
-            setScopeTokens(urlScope);
-            updateStatus("Using drilldown scope. Click Apply Scope to save it.", false);
-            return;
-        }
-
+    function loadScope(forceSaved, skipDrilldownOverlay) {
         $.ajax({
             url: endpoint,
             type: "GET",
@@ -386,6 +441,10 @@ require([
             success: function(scope) {
                 scope = normaliseScope(scope);
                 setScopeTokens(scope);
+                scheduleScopeReapply(scope, 4);
+                if (!skipDrilldownOverlay && applyDrilldownScopeFromUrl()) {
+                    return;
+                }
                 if (scope && scope.is_default) {
                     updateStatus("Default safe scope loaded. Set a valid Analysis Scope and click Apply Scope.", false);
                 } else {
@@ -507,7 +566,7 @@ require([
 
         $(document).on("click", "#dig_load_scope", function(e) {
             e.preventDefault();
-            loadScope(true);
+            loadScope(true, true);
         });
 
         $(document).on("click", "#dig_reset_scope", function(e) {
@@ -530,7 +589,7 @@ require([
             markScopeInputs();
             updateCollapsedState();
             applyFilterVisibilityFromNativeToggle();
-            loadScope(false);
+            loadScope(true, false);
         }, 250);
     } catch (e) {
         if (window.console && console.error) {
