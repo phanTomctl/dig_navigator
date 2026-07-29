@@ -1,0 +1,138 @@
+/* Snapshot Lab tile strip — isolated prototype for Data Quality Snapshot */
+
+.dig-snapshot-wrap {
+    padding: 8px 4px 4px 4px;
+}
+
+.dig-snapshot-banner {
+    color: #a8c4b6;
+    font-size: 12px;
+    margin: 0 0 12px 0;
+    line-height: 1.4;
+}
+
+.dig-snapshot-banner strong {
+    color: #7dff9a;
+}
+
+.dig-snapshot-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+
+@media (max-width: 1200px) {
+    .dig-snapshot-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 800px) {
+    .dig-snapshot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.dig-snapshot-tile {
+    background: #07100d;
+    border: 1px solid #1f3b32;
+    border-radius: 12px;
+    padding: 14px 14px 12px 14px;
+    min-height: 118px;
+    box-shadow: 0 0 18px rgba(125, 255, 154, 0.06);
+    position: relative;
+    overflow: hidden;
+}
+
+.dig-snapshot-tile::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: #3a5a4c;
+}
+
+.dig-snapshot-tile.is-green::before { background: #7dff9a; }
+.dig-snapshot-tile.is-amber::before { background: #ffc857; }
+.dig-snapshot-tile.is-red::before { background: #ff6b6b; }
+.dig-snapshot-tile.is-pending::before { background: #3a5a4c; }
+
+.dig-snapshot-tile-label {
+    color: #7dff9a;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.dig-snapshot-tile-value {
+    color: #e8f5ef;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 6px;
+}
+
+.dig-snapshot-tile-sub {
+    color: #a8c4b6;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.dig-snapshot-tile-status {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.dig-snapshot-tile.is-green .dig-snapshot-tile-status {
+    background: rgba(125, 255, 154, 0.15);
+    color: #7dff9a;
+}
+
+.dig-snapshot-tile.is-amber .dig-snapshot-tile-status {
+    background: rgba(255, 200, 87, 0.15);
+    color: #ffc857;
+}
+
+.dig-snapshot-tile.is-red .dig-snapshot-tile-status {
+    background: rgba(255, 107, 107, 0.15);
+    color: #ff6b6b;
+}
+
+.dig-snapshot-tile.is-pending .dig-snapshot-tile-status {
+    background: rgba(168, 196, 182, 0.12);
+    color: #a8c4b6;
+}
+
+.dig-snapshot-tile-dual {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.dig-snapshot-tile-dual .dig-snapshot-dual-item {
+    flex: 1;
+}
+
+.dig-snapshot-tile-dual .dig-snapshot-dual-label {
+    color: #a8c4b6;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+}
+
+.dig-snapshot-tile-dual .dig-snapshot-dual-value {
+    color: #e8f5ef;
+    font-size: 22px;
+    font-weight: 700;
+}

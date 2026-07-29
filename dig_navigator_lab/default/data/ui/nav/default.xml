@@ -10,6 +10,8 @@
     <view name="telemetry_timeliness_center" label="Delivery IN" />
   </collection>
 
+  <view name="data_quality_snapshot_lab" label="Snapshot Lab" />
+
   <view name="configuration" label="Configuration" />
   <view name="search" label="Search" />
   <view name="about_dig" label="About DIG" />  
