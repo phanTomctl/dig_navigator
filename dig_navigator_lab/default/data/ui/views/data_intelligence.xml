@@ -29,13 +29,6 @@
       <default>1000</default>
     </input>
 
-    <input type="dropdown" token="model_scope" searchWhenChanged="true">
-      <label>Reduction model</label>
-      <choice value="all">Keep all datamodel fields</choice>
-      <choice value="recommended">Keep recommended fields only</choice>
-      <default>recommended</default>
-    </input>
-
   </fieldset>
 
   <search id="base_sample">
@@ -160,8 +153,8 @@ $base_search$
 ]
 | eval in_datamodel=if(isnotnull(datamodels),1,0)
 | eval keep_field=case(
-    "$model_scope$"="all" AND in_datamodel=1, 1,
-    "$model_scope$"="recommended" AND model_field=1, 1,
+    "$field_scope$"="all" AND in_datamodel=1, 1,
+    "$field_scope$"="recommended" AND model_field=1, 1,
     true(), 0
 )
 | eval would_drop=if(keep_field=1,0,1)
