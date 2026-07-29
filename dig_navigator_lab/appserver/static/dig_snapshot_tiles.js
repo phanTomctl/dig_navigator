@@ -292,10 +292,11 @@ require([
         var tiles = buildTiles();
         var html = '<div class="dig-snapshot-wrap">';
         html += '<div class="context-toggle"><details><summary>Why This Matters</summary><div class="context-panel">';
-        html += "<p><strong>What this shows:</strong> Traffic-light indicators for structure, consistency, CIM Alignment, delivery lag, and datamodel Current vs Potential counts.</p>";
-        html += "<p><strong>CIM Alignment:</strong> Of Field-scope fields (Recommended by default) for datamodels that already have at least one matching field in the sample, what share are present. Green = 100% covered. Amber = partial coverage. Red = no observed fields matched to any selected datamodel. Narrow the Datamodel filter to score a specific model.</p>";
-        html += "<p><strong>Delivery lag:</strong> Average ingest delay (_indextime − _time) for the sample. Expected lag comes from the <em>telemetry_timeliness_rules</em> lookup (per source / sourcetype / group, with dashboard defaults when no rule matches). Green = average lag within that expected healthy window (set <code>healthy_seconds=0</code> on a rule if you require zero average lag). Amber = average lag above expected. Red = any future timestamps in the sample.</p>";
-        html += "<p><strong>Read it as:</strong> An indicator, not a certification. Datamodel tile is Green when Current ≥ 1. Structure / Consistency bands remain provisional. Use DIG IN panels for supporting evidence.</p>";
+        html += "<p><strong>Structure:</strong> Share of sampled events with a recognisable format (JSON, XML, KV, or delimited). Not the same as the Structured / Semi-Structured pie labels, which also use shape consistency.</p>";
+        html += "<p><strong>Consistency:</strong> How stable event shapes and lengths are within the sample. Lower shape diversity and length variance score higher.</p>";
+        html += "<p><strong>CIM Alignment:</strong> Of Field-scope fields for datamodels with at least one match in the sample, what share are present. Green = 100%. Amber = partial. Red = no fields matched to any selected datamodel.</p>";
+        html += "<p><strong>Delivery lag:</strong> Average ingest delay (_indextime − _time) vs expected healthy lag from <em>telemetry_timeliness_rules</em>. Green = within expected. Amber = above expected. Red = future timestamps present.</p>";
+        html += "<p><strong>Datamodel alignment:</strong> Count of CIM models with Current vs Potential field evidence in scope. Green when Current ≥ 1.</p>";
         html += "</div></details></div>";
         html += '<p class="dig-snapshot-banner">Indicator strip for the selected analysis scope. Not a certification.</p>';
         html += '<div class="dig-snapshot-grid">';
