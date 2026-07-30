@@ -202,7 +202,18 @@ $base_search$
 | eval p95_delay=case(abs(p95_delay_seconds)<60,tostring(round(p95_delay_seconds,0))."s",abs(p95_delay_seconds)<3600,tostring(round(p95_delay_seconds/60,1))."m",abs(p95_delay_seconds)<86400,tostring(round(p95_delay_seconds/3600,1))."h",true(),tostring(round(p95_delay_seconds/86400,1))."d")
 | eval max_delay=case(abs(max_delay_seconds)<60,tostring(round(max_delay_seconds,0))."s",abs(max_delay_seconds)<3600,tostring(round(max_delay_seconds/60,1))."m",abs(max_delay_seconds)<86400,tostring(round(max_delay_seconds/3600,1))."h",true(),tostring(round(max_delay_seconds/86400,1))."d")
 | eval worst_observed_status=case(future_timestamp_events>0,"Future timestamp",critical_delay_events>0,"Critical",poor_delay_events>0,"Poor",warning_delay_events>0,"Warning",true(),"Healthy")
-| fields events_sampled median_delay p95_delay max_delay healthy_delay_events warning_delay_events poor_delay_events critical_delay_events future_timestamp_events old_event_at_index_events worst_observed_status
+| rename events_sampled as "Events Sampled"
+| rename median_delay as "Median Delay"
+| rename p95_delay as "P95 Delay"
+| rename max_delay as "Max Delay"
+| rename healthy_delay_events as "Healthy"
+| rename warning_delay_events as "Warning"
+| rename poor_delay_events as "Poor"
+| rename critical_delay_events as "Critical"
+| rename future_timestamp_events as "Future Timestamps"
+| rename old_event_at_index_events as "Old at Index"
+| rename worst_observed_status as "Worst Status"
+| table "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Future Timestamps" "Old at Index" "Worst Status"
           ]]></query>
         </search>
         <option name="count">5</option>
@@ -236,8 +247,16 @@ $base_search$
 | eval warning_range="> " . healthy_seconds . "s and <= " . warning_seconds . "s"
 | eval poor_range="> " . warning_seconds . "s and <= " . poor_seconds . "s"
 | eval critical_range="> " . poor_seconds . "s"
-| fields object_type object_name status healthy_range warning_range poor_range critical_range notes
-| sort object_type object_name
+| rename object_type as "Object Type"
+| rename object_name as "Object Name"
+| rename status as "Status"
+| rename healthy_range as "Healthy"
+| rename warning_range as "Warning"
+| rename poor_range as "Poor"
+| rename critical_range as "Critical"
+| rename notes as "Notes"
+| table "Object Type" "Object Name" Status Healthy Warning Poor Critical Notes
+| sort "Object Type" "Object Name"
           ]]></query>
         </search>
         <option name="count">5</option>
@@ -269,7 +288,9 @@ $base_search$
 | stats sum(count) as count by delay_category
 | eval sort_order=case(delay_category="Healthy",1,delay_category="Warning",2,delay_category="Poor",3,delay_category="Critical",4,delay_category="Future timestamp",5,true(),99)
 | sort sort_order
-| fields - sort_order
+| rename delay_category as "Delay Category"
+| rename count as "Events"
+| fields "Delay Category" Events
           ]]></query>
         </search>
         <option name="charting.chart">bar</option>
@@ -294,7 +315,7 @@ $base_search$
       <chart>
         <search base="base_timeliness_evidence">
           <query><![CDATA[
-| timechart median(ingest_delay_seconds) as median_delay_seconds perc95(ingest_delay_seconds) as p95_delay_seconds
+| timechart median(ingest_delay_seconds) as "Median Delay" perc95(ingest_delay_seconds) as "P95 Delay"
           ]]></query>
         </search>
         <option name="charting.chart">line</option>
@@ -340,16 +361,34 @@ $base_search$
     max(healthy_seconds) as healthy_seconds
     max(warning_seconds) as warning_seconds
     max(poor_seconds) as poor_seconds
+    values(poor_display) as poor_display
     by group_value
 | eval median_delay=case(abs(median_delay_seconds)<60,tostring(round(median_delay_seconds,0))."s",abs(median_delay_seconds)<3600,tostring(round(median_delay_seconds/60,1))."m",abs(median_delay_seconds)<86400,tostring(round(median_delay_seconds/3600,1))."h",true(),tostring(round(median_delay_seconds/86400,1))."d")
 | eval p95_delay=case(abs(p95_delay_seconds)<60,tostring(round(p95_delay_seconds,0))."s",abs(p95_delay_seconds)<3600,tostring(round(p95_delay_seconds/60,1))."m",abs(p95_delay_seconds)<86400,tostring(round(p95_delay_seconds/3600,1))."h",true(),tostring(round(p95_delay_seconds/86400,1))."d")
 | eval max_delay=case(abs(max_delay_seconds)<60,tostring(round(max_delay_seconds,0))."s",abs(max_delay_seconds)<3600,tostring(round(max_delay_seconds/60,1))."m",abs(max_delay_seconds)<86400,tostring(round(max_delay_seconds/3600,1))."h",true(),tostring(round(max_delay_seconds/86400,1))."d")
 | eval latest_event_time=strftime(latest_event_time,"%Y-%m-%d %H:%M:%S")
 | eval latest_index_time=strftime(latest_index_time,"%Y-%m-%d %H:%M:%S")
-| eval critical_boundary=">" . tostring(poor_seconds) . "s (" . poor_display . ")"
+| eval critical_boundary=">" . tostring(poor_seconds) . "s (" . mvindex(poor_display,0) . ")"
 | eval worst_observed_status=case(future_timestamp_events>0,"Future timestamp",critical_delay_events>0,"Critical",poor_delay_events>0,"Poor",warning_delay_events>0,"Warning",true(),"Healthy")
 | sort - p95_delay_seconds
-| fields group_value worst_observed_status events_sampled median_delay p95_delay max_delay healthy_delay_events warning_delay_events poor_delay_events critical_delay_events critical_boundary future_timestamp_events old_event_at_index_events latest_event_time latest_index_time rule_source rule_note
+| rename group_value as "Data Source"
+| rename worst_observed_status as "Worst Status"
+| rename events_sampled as "Events Sampled"
+| rename median_delay as "Median Delay"
+| rename p95_delay as "P95 Delay"
+| rename max_delay as "Max Delay"
+| rename healthy_delay_events as "Healthy"
+| rename warning_delay_events as "Warning"
+| rename poor_delay_events as "Poor"
+| rename critical_delay_events as "Critical"
+| rename critical_boundary as "Critical Boundary"
+| rename future_timestamp_events as "Future Timestamps"
+| rename old_event_at_index_events as "Old at Index"
+| rename latest_event_time as "Latest Event Time"
+| rename latest_index_time as "Latest Index Time"
+| rename rule_source as "Rule Source"
+| rename rule_note as "Rule Note"
+| table "Data Source" "Worst Status" "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Critical Boundary" "Future Timestamps" "Old at Index" "Latest Event Time" "Latest Index Time" "Rule Source" "Rule Note"
           ]]></query>
         </search>
         <option name="count">5</option>
@@ -379,7 +418,9 @@ $base_search$
 | stats sum(count) as count by timestamp_indicator
 | eval sort_order=case(timestamp_indicator="Within configured bounds",1,timestamp_indicator="Future timestamp",2,timestamp_indicator="Old event at index time",3,true(),99)
 | sort sort_order
-| fields - sort_order
+| rename timestamp_indicator as "Timestamp Integrity"
+| rename count as "Events"
+| fields "Timestamp Integrity" Events
           ]]></query>
         </search>
         <option name="charting.chart">pie</option>
@@ -404,16 +445,27 @@ $base_search$
       <table>
         <search base="base_timeliness_evidence">
           <query><![CDATA[
-| stats median(ingest_delay_seconds) as median_seconds p90(ingest_delay_seconds) as p90_seconds p95(ingest_delay_seconds) as p95_seconds max(ingest_delay_seconds) as max_seconds values(timeliness_rule_source) as rule_source max(healthy_seconds) as healthy_seconds max(warning_seconds) as warning_seconds max(poor_seconds) as poor_seconds by group_value
+| stats median(ingest_delay_seconds) as median_seconds p90(ingest_delay_seconds) as p90_seconds p95(ingest_delay_seconds) as p95_seconds max(ingest_delay_seconds) as max_seconds values(timeliness_rule_source) as rule_source max(healthy_seconds) as healthy_seconds max(warning_seconds) as warning_seconds max(poor_seconds) as poor_seconds values(poor_display) as poor_display by group_value
 | eval median_status=case(median_seconds<0,"Future timestamp",median_seconds<=healthy_seconds,"Healthy",median_seconds<=warning_seconds,"Warning",median_seconds<=poor_seconds,"Poor",true(),"Critical")
 | eval p90_status=case(p90_seconds<0,"Future timestamp",p90_seconds<=healthy_seconds,"Healthy",p90_seconds<=warning_seconds,"Warning",p90_seconds<=poor_seconds,"Poor",true(),"Critical")
 | eval p95_status=case(p95_seconds<0,"Future timestamp",p95_seconds<=healthy_seconds,"Healthy",p95_seconds<=warning_seconds,"Warning",p95_seconds<=poor_seconds,"Poor",true(),"Critical")
 | eval max_status=case(max_seconds<0,"Future timestamp",max_seconds<=healthy_seconds,"Healthy",max_seconds<=warning_seconds,"Warning",max_seconds<=poor_seconds,"Poor",true(),"Critical")
-| eval critical_boundary=">" . tostring(poor_seconds) . "s (" . poor_display . ")"
+| eval critical_boundary=">" . tostring(poor_seconds) . "s (" . mvindex(poor_display,0) . ")"
 | rename median_seconds as median p90_seconds as p90 p95_seconds as p95 max_seconds as max
 | foreach median p90 p95 max [ eval <<FIELD>>=case(abs(<<FIELD>>)<60,tostring(round(<<FIELD>>,0))."s",abs(<<FIELD>>)<3600,tostring(round(<<FIELD>>/60,1))."m",abs(<<FIELD>>)<86400,tostring(round(<<FIELD>>/3600,1))."h",true(),tostring(round(<<FIELD>>/86400,1))."d") ]
-| fields group_value rule_source median median_status p90 p90_status p95 p95_status max max_status critical_boundary
-| sort group_value
+| rename group_value as "Data Source"
+| rename rule_source as "Rule Source"
+| rename median as "Median"
+| rename median_status as "Median Status"
+| rename p90 as "P90"
+| rename p90_status as "P90 Status"
+| rename p95 as "P95"
+| rename p95_status as "P95 Status"
+| rename max as "Max"
+| rename max_status as "Max Status"
+| rename critical_boundary as "Critical Boundary"
+| table "Data Source" "Rule Source" Median "Median Status" P90 "P90 Status" P95 "P95 Status" Max "Max Status" "Critical Boundary"
+| sort "Data Source"
           ]]></query>
         </search>
         <option name="count">5</option>
@@ -442,6 +494,9 @@ $base_search$
 | sort - ingest_delay_seconds
 | head 25
 | rename group_value as "Data Source"
+| rename sourcetype as "Sourcetype"
+| rename source as "Source"
+| rename host as "Host"
 | rename event_time_readable as "Event Time"
 | rename index_time_readable as "Index Time"
 | rename ingest_delay_display as "Delay"
@@ -450,7 +505,7 @@ $base_search$
 | rename timeliness_rule_source as "Rule Source"
 | rename timeliness_rule_note as "Rule Note"
 | rename raw_preview as "Raw Preview"
-| table "Data Source" sourcetype source host "Event Time" "Index Time" Delay "Delay Category" "Timestamp Integrity" "Rule Source" "Rule Note" "Raw Preview"
+| table "Data Source" Sourcetype Source Host "Event Time" "Index Time" Delay "Delay Category" "Timestamp Integrity" "Rule Source" "Rule Note" "Raw Preview"
           ]]></query>
         </search>
         <option name="count">5</option>
