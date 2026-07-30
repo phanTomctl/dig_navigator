@@ -31,6 +31,7 @@
       <search>
         <query><![CDATA[
 $base_search$
+| head $sample_limit$
 | eval group_value=if("$group_by$"="source", source, sourcetype)
 | eval group_value=coalesce(group_value,"unknown")
 | stats count by group_value
@@ -126,34 +127,31 @@ $base_search$
     "$field_scope$"="recommended" AND model_field=1,1,
     true(),0
 )
+| join type=left max=0 datamodel [
+    | inputlookup datamodel_fields_lookup
+    | eval datamodel=trim(datamodel)
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | eval field_scope_match=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND model_field=1,1,
+        true(),0
+      )
+    | where field_scope_match=1
+    | stats
+        dc(field_name) as total_scope_fields
+        dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields
+        dc(eval(if(required=1,field_name,null()))) as total_required_fields
+        by datamodel
+]
     ]]></query>
     <earliest>$time_range.earliest$</earliest>
     <latest>$time_range.latest$</latest>
-  </search>
-
-  <search id="base_dm_totals">
-    <query><![CDATA[
-| inputlookup datamodel_fields_lookup
-| eval datamodel=trim(datamodel)
-| eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-| eval selected_dm_wrapped="|" . selected_dm . "|"
-| where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-| eval field_name=lower(trim(field_name))
-| eval recommended=if(recommended="true" OR recommended=1,1,0)
-| eval required=if(required="true" OR required=1,1,0)
-| eval model_field=if(recommended=1 OR required=1,1,0)
-| eval field_scope_match=case(
-    "$field_scope$"="all",1,
-    "$field_scope$"="recommended" AND model_field=1,1,
-    true(),0
-)
-| where field_scope_match=1
-| stats
-    dc(field_name) as total_scope_fields
-    dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields
-    dc(eval(if(required=1,field_name,null()))) as total_required_fields
-    by datamodel
-    ]]></query>
   </search>
 
   <row>
@@ -191,24 +189,7 @@ $base_search$
         <search base="base_dm_field_matches">
           <query><![CDATA[
 | where field_scope_match=1
-| stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags by datamodel
-| join type=left max=0 datamodel [
-    | inputlookup datamodel_fields_lookup
-    | eval datamodel=trim(datamodel)
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval field_name=lower(trim(field_name))
-    | eval recommended=if(recommended="true" OR recommended=1,1,0)
-    | eval required=if(required="true" OR required=1,1,0)
-    | eval scope_field=case(
-        "$field_scope$"="all",1,
-        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
-        true(),0
-      )
-    | where scope_field=1
-    | stats dc(field_name) as total_scope_fields by datamodel
-]
+| stats dc(field_name) as matched_scope_fields values(observed_tags) as observed_tags max(total_scope_fields) as total_scope_fields by datamodel
 | eval datamodel_key=case(
     lower(datamodel)="inventory","Compute_Inventory",
     lower(datamodel)="java virtual machines","JVM",
@@ -283,21 +264,9 @@ $base_search$
     dc(eval(if(model_field=1,field_name,null()))) as matched_required_recommended_fields
     sum(field_instances) as matched_field_occurrences
     max(event_count) as event_count
+    max(total_scope_fields) as total_scope_fields
+    max(total_required_recommended_fields) as total_required_recommended_fields
     by datamodel group_value
-| join type=left max=0 datamodel [
-    | inputlookup datamodel_fields_lookup
-    | eval datamodel=trim(datamodel)
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval field_name=lower(trim(field_name))
-    | eval recommended=if(recommended="true" OR recommended=1,1,0)
-    | eval required=if(required="true" OR required=1,1,0)
-    | eval model_field=if(recommended=1 OR required=1,1,0)
-    | eval field_scope_match=case("$field_scope$"="all",1,"$field_scope$"="recommended" AND model_field=1,1,true(),0)
-    | where field_scope_match=1
-    | stats dc(field_name) as total_scope_fields dc(eval(if(model_field=1,field_name,null()))) as total_required_recommended_fields by datamodel
-]
 | eval coverage_pct=if(total_scope_fields>0,round((matched_scope_fields/total_scope_fields)*100,2),0)
 | eval recommended_coverage_pct=if(total_required_recommended_fields>0,round((matched_required_recommended_fields/total_required_recommended_fields)*100,2),0)
 | rename datamodel as Datamodel
