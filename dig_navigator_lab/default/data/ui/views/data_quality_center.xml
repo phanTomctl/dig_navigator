@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+<dashboard script="dig_analysis_scope_kv.js,dig_quality_dimensions_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
   <label>Data Quality IN</label>
 
   <fieldset submitButton="false" autoRun="false">
@@ -31,6 +31,7 @@
       <search>
         <query><![CDATA[
 $base_search$
+| head $sample_limit$
 | eval group_value=if("$group_by$"="source", source, sourcetype)
 | eval group_value=coalesce(group_value,"unknown")
 | stats count by group_value
@@ -41,11 +42,10 @@ $base_search$
       </search>
       <delimiter>|</delimiter>
     </input>
-  
 
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
-      <default>5000</default>
+      <default>1000</default>
     </input>
 
   </fieldset>
@@ -74,6 +74,7 @@ $base_search$
 | eval raw_shape=replace(raw_shape,"\d+","N")
 | eval raw_shape=trim(replace(raw_shape,"\s+"," "))
 | eval structure_hint=if(is_json=1 OR is_xml=1 OR is_kv=1 OR is_delimited=1,1,0)
+| eval raw_hash=md5(_raw)
 
 | eventstats
     count as event_count
@@ -81,6 +82,9 @@ $base_search$
     dc(raw_shape) as distinct_shapes
     avg(raw_len) as avg_raw_len
     stdev(raw_len) as stdev_raw_len
+    dc(raw_hash) as unique_raws
+    dc(host) as distinct_hosts
+    dc(source) as distinct_sources
     values(tag) as observed_tags
     by group_value
 
@@ -88,9 +92,14 @@ $base_search$
 | eval length_variance=if(avg_raw_len>0,round(stdev_raw_len/avg_raw_len,4),0)
 | eval structure_score=round(structure_ratio*100,0)
 | eval consistency_score=round(max(0,min(100,100-(shape_ratio*100)-(length_variance*25))),0)
+| eval duplicate_pct=round(if(event_count>0,(1-(unique_raws/event_count))*100,0),1)
+| eval host_ratio=if(event_count>0,round(distinct_hosts/event_count,4),0)
+| eval source_ratio=if(event_count>0,round(distinct_sources/event_count,4),0)
+| eval cardinality_pressure=max(shape_ratio, host_ratio, source_ratio)
+| eval cardinality_score=round(max(0,min(100,100-(cardinality_pressure*100))),0)
 
 | eval observed_tags_joined=mvjoin(observed_tags,"|||")
-| eval group_key=group_value . "###" . event_count . "###" . observed_tags_joined . "###" . structure_score . "###" . consistency_score . "###" . distinct_shapes . "###" . shape_ratio . "###" . length_variance
+| eval group_key=group_value . "###" . event_count . "###" . observed_tags_joined . "###" . structure_score . "###" . consistency_score . "###" . distinct_shapes . "###" . shape_ratio . "###" . length_variance . "###" . duplicate_pct . "###" . host_ratio . "###" . source_ratio . "###" . cardinality_score . "###" . cardinality_pressure
 
 | foreach * [
     eval present_<<FIELD>>=if(isnotnull('<<FIELD>>'),"<<FIELD>>",null())
@@ -98,7 +107,7 @@ $base_search$
 
 | fields group_key present_*
 | untable group_key temp_field field_name
-| rex field=group_key "^(?<group_value>.*?)###(?<event_count>\d+)###(?<observed_tags_joined>.*?)###(?<structure_score>[-\d.]+)###(?<consistency_score>[-\d.]+)###(?<distinct_shapes>\d+)###(?<shape_ratio>[-\d.]+)###(?<length_variance>[-\d.]+)$"
+| rex field=group_key "^(?<group_value>.*?)###(?<event_count>\d+)###(?<observed_tags_joined>.*?)###(?<structure_score>[-\d.]+)###(?<consistency_score>[-\d.]+)###(?<distinct_shapes>\d+)###(?<shape_ratio>[-\d.]+)###(?<length_variance>[-\d.]+)###(?<duplicate_pct>[-\d.]+)###(?<host_ratio>[-\d.]+)###(?<source_ratio>[-\d.]+)###(?<cardinality_score>[-\d.]+)###(?<cardinality_pressure>[-\d.]+)$"
 | eval observed_tags=split(observed_tags_joined,"|||")
 | eval event_count=tonumber(event_count)
 | eval structure_score=tonumber(structure_score)
@@ -106,6 +115,11 @@ $base_search$
 | eval distinct_shapes=tonumber(distinct_shapes)
 | eval shape_ratio=tonumber(shape_ratio)
 | eval length_variance=tonumber(length_variance)
+| eval duplicate_pct=tonumber(duplicate_pct)
+| eval host_ratio=tonumber(host_ratio)
+| eval source_ratio=tonumber(source_ratio)
+| eval cardinality_score=tonumber(cardinality_score)
+| eval cardinality_pressure=tonumber(cardinality_pressure)
 
 | eval field_name=replace(field_name,"^present_","")
 | eval field_name=lower(field_name)
@@ -123,20 +137,102 @@ $base_search$
     max(distinct_shapes) as distinct_shapes
     max(shape_ratio) as shape_ratio
     max(length_variance) as length_variance
+    max(duplicate_pct) as duplicate_pct
+    max(host_ratio) as host_ratio
+    max(source_ratio) as source_ratio
+    max(cardinality_score) as cardinality_score
+    max(cardinality_pressure) as cardinality_pressure
     by group_value field_name
 
 | join type=left max=0 field_name [
     | inputlookup datamodel_fields_lookup
     | eval datamodel=trim(datamodel)
     | eval field_name=lower(trim(field_name))
-    | stats values(datamodel) as datamodels by field_name
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | stats values(datamodel) as datamodels max(model_field) as model_field by field_name
 ]
 
 | eval in_datamodel=if(isnotnull(datamodels),1,0)
-| fields group_value field_name field_instances observed_tags event_count structure_score consistency_score distinct_shapes shape_ratio length_variance datamodels in_datamodel
+| eval model_field=coalesce(model_field,0)
+| fields group_value field_name field_instances observed_tags event_count structure_score consistency_score distinct_shapes shape_ratio length_variance duplicate_pct host_ratio source_ratio cardinality_score cardinality_pressure datamodels in_datamodel model_field
     ]]></query>
     <earliest>$time_range.earliest$</earliest>
     <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="tile_quality_core" base="base_quality_field_evidence">
+    <query><![CDATA[
+| eval is_meta_field=if(match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|tag|group_value|datamodels|in_datamodel|model_field|structure_score|consistency_score|distinct_shapes|shape_ratio|length_variance|duplicate_pct|host_ratio|source_ratio|cardinality_score|cardinality_pressure|event_count|field_instances|observed_tags)$"),1,0)
+| eval fill_pct=if(is_meta_field=0 AND event_count>0,round(100*field_instances/event_count,1),null())
+| stats
+    max(structure_score) as structure_score
+    max(consistency_score) as consistency_score
+    max(duplicate_pct) as duplicate_pct
+    max(cardinality_score) as cardinality_score
+    max(cardinality_pressure) as cardinality_pressure
+    avg(fill_pct) as avg_fill_pct
+    max(event_count) as event_count
+    by group_value
+| stats
+    avg(structure_score) as Structure
+    avg(consistency_score) as Consistency
+    avg(avg_fill_pct) as parsing_quality_pct
+    avg(cardinality_score) as cardinality_score
+    avg(cardinality_pressure) as cardinality_pressure
+    avg(duplicate_pct) as duplicate_pct
+    sum(event_count) as events_sampled
+| eval Structure=round(Structure,0)
+| eval Consistency=round(Consistency,0)
+| eval parsing_quality_pct=round(coalesce(parsing_quality_pct,0),0)
+| eval cardinality_score=round(coalesce(cardinality_score,0),0)
+| eval cardinality_pressure_pct=round(coalesce(cardinality_pressure,0)*100,1)
+| eval duplicate_pct=round(coalesce(duplicate_pct,0),1)
+| fields Structure Consistency parsing_quality_pct cardinality_score cardinality_pressure_pct duplicate_pct events_sampled
+    ]]></query>
+  </search>
+
+  <search id="tile_quality_cim" base="base_quality_field_evidence">
+    <query><![CDATA[
+| stats max(field_instances) as field_instances by field_name
+| eval field_name=lower(trim(field_name))
+| eval in_sample=1
+| fields field_name in_sample
+| append [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
+    | eval datamodel=trim(datamodel)
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=if(recommended=1 OR required=1,1,0)
+    | where scope_field=1
+    | eval from_lookup=1
+    | fields field_name datamodel from_lookup
+]
+| stats
+    max(in_sample) as in_sample
+    max(from_lookup) as from_lookup
+    values(datamodel) as datamodels
+    by field_name
+| eval matched_field=if(in_sample=1 AND from_lookup=1,1,0)
+| eventstats max(matched_field) as any_dm_match
+| where from_lookup=1
+| mvexpand datamodels
+| rename datamodels as datamodel
+| eventstats max(matched_field) as model_has_evidence by datamodel
+| stats
+    dc(eval(if(model_has_evidence=1,field_name,null()))) as total_scope_fields
+    dc(eval(if(model_has_evidence=1 AND matched_field=1,field_name,null()))) as matched_scope_fields
+    max(any_dm_match) as any_dm_match
+    dc(eval(if(model_has_evidence=1,datamodel,null()))) as models_with_evidence
+| eval total_scope_fields=coalesce(total_scope_fields,0)
+| eval matched_scope_fields=coalesce(matched_scope_fields,0)
+| eval any_dm_match=coalesce(any_dm_match,0)
+| eval models_with_evidence=coalesce(models_with_evidence,0)
+| eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
+| fields cim_alignment_pct matched_scope_fields total_scope_fields any_dm_match models_with_evidence
+    ]]></query>
   </search>
 
   <row>
@@ -147,7 +243,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Quality Information Nexus</div>
             <div class="devnull-subtitle">
-              Information Nexus for investigating telemetry quality evidence across structure, consistency, CIM alignment, tagging and governance mappings.
+              Information Nexus for investigating telemetry quality evidence across structure, consistency, CIM alignment, parsing, cardinality and duplication.
             </div>
           </div>
         </div>
@@ -159,97 +255,8 @@ $base_search$
     <panel>
       <title>Data Quality Dimensions</title>
       <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why This Matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Average quality scores across the selected telemetry for five evidence-based dimensions.</p>
-              <p><strong>How to use it:</strong> Use this as the first view of where data quality is strong and where investigation should focus.</p>
-              <p><strong>Read it as:</strong> These are telemetry quality indicators, not compliance scores. Low values identify where data may be harder to trust, govern, normalise, or operationalise.</p>
-            </div>
-          </details>
-        </div>
+        <div id="dig-quality-dimensions-tiles"></div>
       </html>
-      <chart>
-        <search base="base_quality_field_evidence">
-          <query><![CDATA[
-| eventstats
-    dc(field_name) as current_fields
-    dc(eval(if(in_datamodel=1,field_name,null()))) as matched_dm_fields
-    by group_value
-
-| eval datamodels=if(isnull(datamodels),"__none__",datamodels)
-| mvexpand datamodels
-| rename datamodels as datamodel
-
-| join type=left max=0 datamodel [
-    | inputlookup cim_datamodel_tags_lookup
-    | eval datamodel=trim(datamodel)
-    | eval expected_tag=lower(trim(expected_tag))
-    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
-    | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level"
-    | fields datamodel expected_tag tag_role coverage_set
-]
-
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval datamodel=trim(datamodel)
-    | eval framework=trim(framework)
-    | stats values(framework) as frameworks by datamodel
-]
-
-| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
-| eval has_expected_tag_mapping=if(isnotnull(expected_tag),1,0)
-| eval governance_mapped=if(isnotnull(frameworks),1,0)
-
-| stats
-    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(has_expected_tag_mapping) as has_expected_tag_mapping
-    max(structure_score) as structure_score
-    max(consistency_score) as consistency_score
-    max(current_fields) as current_fields
-    max(matched_dm_fields) as matched_dm_fields
-    max(governance_mapped) as governance_mapped
-    by group_value datamodel coverage_set
-
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
-| stats
-    max(structure_score) as structure_score
-    max(consistency_score) as consistency_score
-    max(current_fields) as current_fields
-    max(matched_dm_fields) as matched_dm_fields
-    dc(eval(if(datamodel!="__none__",datamodel,null()))) as total_matched_datamodels
-    dc(eval(if(has_expected_tag_mapping=1 AND datamodel!="__none__",datamodel,null()))) as taggable_datamodels
-    dc(eval(if(set_complete=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
-    dc(eval(if(governance_mapped=1 AND datamodel!="__none__",datamodel,null()))) as mapped_datamodels
-    by group_value
-
-| eval cim_score=round(if(current_fields>0,(matched_dm_fields/current_fields)*100,0),0)
-| eval tagging_score=case(taggable_datamodels>0,round((tagged_datamodels/taggable_datamodels)*100,0), total_matched_datamodels>0,50, true(),50)
-| eval governance_score=case(total_matched_datamodels>0,round((mapped_datamodels/total_matched_datamodels)*100,0), true(),50)
-| eval overall_quality_score=round((structure_score+consistency_score+cim_score+tagging_score+governance_score)/5,0)
-
-| stats
-    avg(structure_score) as Structure
-    avg(consistency_score) as Consistency
-    avg(cim_score) as "CIM Alignment"
-    avg(tagging_score) as Tagging
-    avg(governance_score) as "Governance Context"
-    avg(overall_quality_score) as Overall
-
-| foreach * [ eval <<FIELD>>=round('<<FIELD>>',0) ]
-| transpose 0 column_name="Quality Dimension"
-| rename "row 1" as "Score"
-          ]]></query>
-        </search>
-        <option name="charting.chart">column</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Quality Dimension</option>
-        <option name="charting.axisTitleY.text">Score out of 100</option>
-        <option name="charting.seriesColors">[#00e5ff]</option>
-      </chart>
     </panel>
   </row>
 
@@ -261,9 +268,9 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> A grouped quality summary across structure, consistency, CIM alignment, tagging and governance mapping.</p>
-              <p><strong>How to use it:</strong> Use this table to identify which Data Source groups are ready for use and which need engineering review.</p>
-              <p><strong>Read it as:</strong> Overall quality combines multiple objective signals. It should guide investigation, not replace human review.</p>
+              <p><strong>What this shows:</strong> Per-source quality indicators for structure, consistency, CIM alignment, parsing fill, cardinality pressure and duplication.</p>
+              <p><strong>How to use it:</strong> Sort by the weakest dimension or issue count to prioritise engineering review.</p>
+              <p><strong>Read it as:</strong> These are telemetry quality indicators, not compliance or governance scores.</p>
             </div>
           </details>
         </div>
@@ -271,83 +278,58 @@ $base_search$
       <table>
         <search base="base_quality_field_evidence">
           <query><![CDATA[
-| eventstats
-    dc(field_name) as current_fields
-    dc(eval(if(in_datamodel=1,field_name,null()))) as matched_dm_fields
-    by group_value
-
+| eval is_meta_field=if(match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|tag)$"),1,0)
+| eval fill_pct=if(is_meta_field=0 AND event_count>0,round(100*field_instances/event_count,1),null())
 | eval datamodels=if(isnull(datamodels),"__none__",datamodels)
 | mvexpand datamodels
 | rename datamodels as datamodel
-
-| join type=left max=0 datamodel [
-    | inputlookup cim_datamodel_tags_lookup
+| join type=left max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
     | eval datamodel=trim(datamodel)
-    | eval expected_tag=lower(trim(expected_tag))
-    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
-    | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level"
-    | fields datamodel expected_tag tag_role coverage_set
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=if(recommended=1 OR required=1,1,0)
+    | where scope_field=1
+    | eval from_lookup=1
+    | fields field_name datamodel from_lookup
 ]
-
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval datamodel=trim(datamodel)
-    | eval framework=trim(framework)
-    | stats values(framework) as frameworks by datamodel
-]
-
-| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
-| eval has_expected_tag_mapping=if(isnotnull(expected_tag),1,0)
-| eval governance_mapped=if(isnotnull(frameworks),1,0)
-
+| eval matched_scope=if(from_lookup=1,1,0)
+| eventstats max(matched_scope) as model_has_evidence by group_value datamodel
 | stats
-    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(has_expected_tag_mapping) as has_expected_tag_mapping
-    max(event_count) as event_count
     max(structure_score) as structure_score
     max(consistency_score) as consistency_score
-    max(current_fields) as current_fields
-    max(matched_dm_fields) as matched_dm_fields
-    max(governance_mapped) as governance_mapped
-    by group_value datamodel coverage_set
-
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
-| stats
+    max(duplicate_pct) as duplicate_pct
+    max(cardinality_score) as cardinality_score
+    max(cardinality_pressure) as cardinality_pressure
+    avg(fill_pct) as parsing_quality_pct
     max(event_count) as event_count
-    max(structure_score) as structure_score
-    max(consistency_score) as consistency_score
-    max(current_fields) as current_fields
-    max(matched_dm_fields) as matched_dm_fields
-    dc(eval(if(datamodel!="__none__",datamodel,null()))) as matched_datamodel_count
-    dc(eval(if(has_expected_tag_mapping=1 AND datamodel!="__none__",datamodel,null()))) as taggable_datamodels
-    dc(eval(if(set_complete=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
-    dc(eval(if(governance_mapped=1 AND datamodel!="__none__",datamodel,null()))) as mapped_datamodels
+    dc(eval(if(model_has_evidence=1 AND datamodel!="__none__",field_name,null()))) as total_scope_fields
+    dc(eval(if(model_has_evidence=1 AND matched_scope=1 AND datamodel!="__none__",field_name,null()))) as matched_scope_fields
+    dc(eval(if(model_has_evidence=1 AND datamodel!="__none__",datamodel,null()))) as models_with_evidence
     by group_value
-
-| eval cim_score=round(if(current_fields>0,(matched_dm_fields/current_fields)*100,0),0)
-| eval tagging_score=case(taggable_datamodels>0,round((tagged_datamodels/taggable_datamodels)*100,0), matched_datamodel_count>0,50, true(),50)
-| eval governance_score=case(matched_datamodel_count>0,round((mapped_datamodels/matched_datamodel_count)*100,0), true(),50)
-| eval overall_quality_score=round((structure_score+consistency_score+cim_score+tagging_score+governance_score)/5,0)
-| eval quality_band=case(overall_quality_score>=85,"Excellent",overall_quality_score>=70,"Good",overall_quality_score>=50,"Needs Review",true(),"Poor")
+| eval parsing_quality_pct=round(coalesce(parsing_quality_pct,0),0)
+| eval cardinality_pressure_pct=round(coalesce(cardinality_pressure,0)*100,1)
+| eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
 | eval issue_count=0
-| eval issue_count=issue_count+if(structure_score<60,1,0)+if(consistency_score<60,1,0)+if(cim_score<40,1,0)+if(tagging_score<60,1,0)+if(governance_score<60,1,0)
-
+| eval issue_count=issue_count+if(structure_score<60,1,0)+if(consistency_score<60,1,0)+if(cim_alignment_pct<40,1,0)+if(parsing_quality_pct<60,1,0)+if(cardinality_score<60,1,0)+if(duplicate_pct>=20,1,0)
+| eval quality_band=case(issue_count=0,"Good",issue_count<=2,"Needs Review",true(),"Poor")
 | rename group_value as "Data Source"
-| rename overall_quality_score as "Overall Quality Score"
 | rename quality_band as "Quality Band"
-| rename structure_score as "Structure Score"
-| rename consistency_score as "Consistency Score"
-| rename cim_score as "CIM Alignment Score"
-| rename tagging_score as "Tagging Score"
-| rename governance_score as "Governance Mapping Score"
+| rename structure_score as "Structure"
+| rename consistency_score as "Consistency"
+| rename cim_alignment_pct as "CIM Alignment %"
+| rename parsing_quality_pct as "Parsing Quality"
+| rename cardinality_score as "Cardinality"
+| rename cardinality_pressure_pct as "Cardinality Pressure %"
+| rename duplicate_pct as "Duplication %"
 | rename issue_count as "Quality Issue Count"
-| rename matched_datamodel_count as "Matched Datamodel Count"
-| rename taggable_datamodels as "Taggable Datamodels"
-| rename tagged_datamodels as "Tagged Datamodels"
-| table "Data Source" "Quality Band" "Overall Quality Score" "Structure Score" "Consistency Score" "CIM Alignment Score" "Tagging Score" "Governance Mapping Score" "Quality Issue Count" event_count current_fields matched_dm_fields "Matched Datamodel Count" "Taggable Datamodels" "Tagged Datamodels"
-| sort "Quality Band" - "Quality Issue Count" "Overall Quality Score"
+| rename event_count as "Events Sampled"
+| rename matched_scope_fields as "Matched Scope Fields"
+| rename total_scope_fields as "Total Scope Fields"
+| rename models_with_evidence as "Matched Datamodels"
+| table "Data Source" "Quality Band" Structure Consistency "CIM Alignment %" "Parsing Quality" Cardinality "Cardinality Pressure %" "Duplication %" "Quality Issue Count" "Events Sampled" "Matched Scope Fields" "Total Scope Fields" "Matched Datamodels"
+| sort "Quality Band" - "Quality Issue Count" "Data Source"
           ]]></query>
         </search>
       </table>
@@ -363,7 +345,7 @@ $base_search$
             <summary>Why This Matters</summary>
             <div class="context-panel">
               <p><strong>What this shows:</strong> Specific quality concerns raised by the scoring dimensions.</p>
-              <p><strong>How to use it:</strong> Use this as the work queue for investigation, onboarding review, CIM alignment, tagging cleanup, or governance mapping updates.</p>
+              <p><strong>How to use it:</strong> Use this as the work queue for parsing, CIM field coverage, cardinality, or duplication investigation.</p>
               <p><strong>Read it as:</strong> These are evidence-led indicators. They should start the engineering conversation rather than act as automated remediation instructions.</p>
             </div>
           </details>
@@ -372,98 +354,65 @@ $base_search$
       <table>
         <search base="base_quality_field_evidence">
           <query><![CDATA[
-| eventstats
-    dc(field_name) as current_fields
-    dc(eval(if(in_datamodel=1,field_name,null()))) as matched_dm_fields
-    by group_value
-
+| eval is_meta_field=if(match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|tag)$"),1,0)
+| eval fill_pct=if(is_meta_field=0 AND event_count>0,round(100*field_instances/event_count,1),null())
 | eval datamodels=if(isnull(datamodels),"__none__",datamodels)
 | mvexpand datamodels
 | rename datamodels as datamodel
-
-| join type=left max=0 datamodel [
-    | inputlookup cim_datamodel_tags_lookup
+| join type=left max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
     | eval datamodel=trim(datamodel)
-    | eval expected_tag=lower(trim(expected_tag))
-    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
-    | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level"
-    | fields datamodel expected_tag tag_role coverage_set
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | eval scope_field=if(recommended=1 OR required=1,1,0)
+    | where scope_field=1
+    | eval from_lookup=1
+    | fields field_name datamodel from_lookup
 ]
-
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval datamodel=trim(datamodel)
-    | eval framework=trim(framework)
-    | stats values(framework) as frameworks by datamodel
-]
-
-| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
-| eval has_expected_tag_mapping=if(isnotnull(expected_tag),1,0)
-| eval governance_mapped=if(isnotnull(frameworks),1,0)
-
+| eval matched_scope=if(from_lookup=1,1,0)
+| eventstats max(matched_scope) as model_has_evidence by group_value datamodel
 | stats
-    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(has_expected_tag_mapping) as has_expected_tag_mapping
-    max(event_count) as event_count
     max(structure_score) as structure_score
     max(consistency_score) as consistency_score
-    max(distinct_shapes) as distinct_shapes
-    max(shape_ratio) as shape_ratio
-    max(length_variance) as length_variance
-    max(current_fields) as current_fields
-    max(matched_dm_fields) as matched_dm_fields
-    max(governance_mapped) as governance_mapped
-    by group_value datamodel coverage_set
-
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
-| stats
+    max(duplicate_pct) as duplicate_pct
+    max(cardinality_score) as cardinality_score
+    avg(fill_pct) as parsing_quality_pct
     max(event_count) as event_count
-    max(structure_score) as structure_score
-    max(consistency_score) as consistency_score
-    max(distinct_shapes) as distinct_shapes
-    max(shape_ratio) as shape_ratio
-    max(length_variance) as length_variance
-    max(current_fields) as current_fields
-    max(matched_dm_fields) as matched_dm_fields
-    dc(eval(if(datamodel!="__none__",datamodel,null()))) as matched_datamodel_count
-    dc(eval(if(has_expected_tag_mapping=1 AND datamodel!="__none__",datamodel,null()))) as taggable_datamodels
-    dc(eval(if(set_complete=1 AND datamodel!="__none__",datamodel,null()))) as tagged_datamodels
-    dc(eval(if(governance_mapped=1 AND datamodel!="__none__",datamodel,null()))) as mapped_datamodels
+    dc(eval(if(model_has_evidence=1 AND datamodel!="__none__",field_name,null()))) as total_scope_fields
+    dc(eval(if(model_has_evidence=1 AND matched_scope=1 AND datamodel!="__none__",field_name,null()))) as matched_scope_fields
     by group_value
-
-| eval cim_score=round(if(current_fields>0,(matched_dm_fields/current_fields)*100,0),0)
-| eval tagging_score=case(taggable_datamodels>0,round((tagged_datamodels/taggable_datamodels)*100,0), matched_datamodel_count>0,50, true(),50)
-| eval governance_score=case(matched_datamodel_count>0,round((mapped_datamodels/matched_datamodel_count)*100,0), true(),50)
-
+| eval parsing_quality_pct=round(coalesce(parsing_quality_pct,0),0)
+| eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
 | eval issue=mvappend(
     if(structure_score<60,"Low structure signal: events may need parsing or onboarding review",null()),
     if(consistency_score<60,"High event variation: event shapes or lengths are inconsistent",null()),
     if(event_count<50,"Low sample size: quality confidence may be limited",null()),
-    if(cim_score<40,"Low CIM alignment: observed fields have limited datamodel coverage",null()),
-    if(tagging_score<60,"Low tagging evidence: related CIM tags were not consistently observed",null()),
-    if(governance_score<60,"Low governance mapping: matched datamodels have incomplete governance guidance",null())
+    if(cim_alignment_pct<40,"Low CIM alignment: recommended fields for matched datamodels are incomplete",null()),
+    if(parsing_quality_pct<60,"Low parsing quality: extracted fields are sparsely populated",null()),
+    if(cardinality_score<60,"High cardinality pressure: shapes, hosts or sources are highly unique per event",null()),
+    if(duplicate_pct>=20,"High duplication: many repeated raw payloads in the sample",null())
 )
 | eval issue_count=mvcount(issue)
 | where issue_count>0
-
 | eval severity=case(
     mvfind(issue,"Low structure signal: events may need parsing or onboarding review")>=0,"High",
     mvfind(issue,"High event variation: event shapes or lengths are inconsistent")>=0,"High",
-    mvfind(issue,"Low CIM alignment: observed fields have limited datamodel coverage")>=0,"High",
-    mvfind(issue,"Low tagging evidence: related CIM tags were not consistently observed")>=0,"High",
+    mvfind(issue,"Low CIM alignment: recommended fields for matched datamodels are incomplete")>=0,"High",
+    mvfind(issue,"High duplication: many repeated raw payloads in the sample")>=0,"High",
     true(),"Medium"
 )
-
-| eval issue=mvsort(issue)
-| eval issue=mvjoin(issue,"; ")
-
+| eval issue=mvjoin(mvsort(issue),"; ")
 | rename group_value as "Data Source"
 | rename issue as "Issues"
-
-| table "Data Source" severity "Issues" event_count structure_score consistency_score cim_score tagging_score governance_score matched_datamodel_count taggable_datamodels tagged_datamodels mapped_datamodels
-
+| rename structure_score as "Structure"
+| rename consistency_score as "Consistency"
+| rename cim_alignment_pct as "CIM Alignment %"
+| rename parsing_quality_pct as "Parsing Quality"
+| rename cardinality_score as "Cardinality"
+| rename duplicate_pct as "Duplication %"
+| rename event_count as "Events Sampled"
+| table "Data Source" severity Issues Structure Consistency "CIM Alignment %" "Parsing Quality" Cardinality "Duplication %" "Events Sampled"
 | sort severity "Data Source"
           ]]></query>
         </search>
@@ -473,15 +422,15 @@ $base_search$
 
   <row>
     <panel>
-      <title>CIM, Tagging and Governance Evidence</title>
+      <title>CIM Alignment Evidence</title>
       <html>
         <div class="context-toggle">
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> The CIM/datamodel, tag and governance evidence contributing to data quality.</p>
-              <p><strong>How to use it:</strong> Use this to understand whether quality concerns are caused by weak CIM alignment, missing tags, or incomplete governance mappings.</p>
-              <p><strong>Read it as:</strong> A Data Source can be structurally good but still have lower operational quality if CIM, tagging or governance evidence is incomplete.</p>
+              <p><strong>What this shows:</strong> Recommended-field matches and related CIM tags for datamodels detected in the selected data.</p>
+              <p><strong>How to use it:</strong> Use this to see which models contribute to CIM Alignment and whether coverage tags are present.</p>
+              <p><strong>Read it as:</strong> Field evidence and tag evidence are related but separate. Governance mappings are reviewed on the Governance dashboards.</p>
             </div>
           </details>
         </div>
@@ -489,17 +438,24 @@ $base_search$
       <table>
         <search base="base_quality_field_evidence">
           <query><![CDATA[
-| where in_datamodel=1
+| where model_field=1 OR in_datamodel=1
 | mvexpand datamodels
 | rename datamodels as datamodel
-
+| join type=inner max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
+    | eval datamodel=trim(datamodel)
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | where recommended=1 OR required=1
+    | fields field_name datamodel
+]
 | stats
     dc(field_name) as matched_fields
     values(field_name) as field_examples
     values(observed_tags) as observed_tags
     max(event_count) as event_count
     by group_value datamodel
-
 | join type=left max=0 datamodel [
     | inputlookup cim_datamodel_tags_lookup
     | eval datamodel=trim(datamodel)
@@ -509,18 +465,9 @@ $base_search$
     | where tag_role="top_level"
     | fields datamodel expected_tag tag_role coverage_set
 ]
-
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval datamodel=trim(datamodel)
-    | eval framework=trim(framework)
-    | stats values(framework) as frameworks by datamodel
-]
-
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
 | eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
 | eval has_tag_mapping=if(isnotnull(expected_tag),1,0)
-
 | stats
     min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
     max(has_tag_mapping) as has_tag_mapping
@@ -528,41 +475,36 @@ $base_search$
     max(matched_fields) as matched_fields
     values(field_examples) as field_examples
     values(observed_tags) as observed_tags
-    values(frameworks) as frameworks
     max(event_count) as event_count
     by group_value datamodel coverage_set
-
 | eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
 | stats
     max(matched_fields) as matched_fields
     values(field_examples) as field_examples
     values(observed_tags) as observed_tags
     values(related_cim_tags) as related_cim_tags
-    values(frameworks) as frameworks
     max(has_tag_mapping) as has_tag_mapping
     max(set_complete) as coverage_complete
     max(event_count) as event_count
     by group_value datamodel
-
 | eval tag_status=case(
     has_tag_mapping=0,"No related CIM tag mapping",
     coverage_complete=1,"Coverage tags observed",
     true(),"Coverage tags not observed"
 )
-| eval governance_status=if(isnotnull(frameworks),"Governance mapped","Unmapped")
-
+| eval related_cim_tags=if(isnull(related_cim_tags),"",mvjoin(mvsort(mvdedup(related_cim_tags)),", "))
+| eval observed_tags=if(isnull(observed_tags),"",mvjoin(mvsort(mvdedup(observed_tags)),", "))
+| eval field_examples=mvjoin(mvsort(mvdedup(field_examples)),", ")
 | rename group_value as "Data Source"
 | rename datamodel as "Datamodel"
-| rename matched_fields as "Matched Fields"
-| rename tag_status as "Tagging Status"
-| rename governance_status as "Governance Mapping Status"
+| rename matched_fields as "Matched Recommended Fields"
+| rename tag_status as "Coverage Tag Status"
 | rename related_cim_tags as "Related CIM Tags"
 | rename observed_tags as "Observed Tags"
-| rename frameworks as "Frameworks"
 | rename field_examples as "Matched Field Examples"
 | rename event_count as "Events Analysed"
-| table "Data Source" Datamodel "Matched Fields" "Tagging Status" "Governance Mapping Status" "Related CIM Tags" "Observed Tags" Frameworks "Matched Field Examples" "Events Analysed"
-| sort "Data Source" - "Matched Fields" Datamodel
+| table "Data Source" Datamodel "Matched Recommended Fields" "Coverage Tag Status" "Related CIM Tags" "Observed Tags" "Matched Field Examples" "Events Analysed"
+| sort "Data Source" - "Matched Recommended Fields" Datamodel
           ]]></query>
         </search>
       </table>
