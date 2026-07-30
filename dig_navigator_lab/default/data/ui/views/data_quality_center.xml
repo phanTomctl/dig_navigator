@@ -99,7 +99,7 @@ $base_search$
 | eval cardinality_score=round(max(0,min(100,100-(cardinality_pressure*100))),0)
 
 | eval observed_tags_joined=mvjoin(observed_tags,"|||")
-| eval group_key=group_value . "###" . event_count . "###" . observed_tags_joined . "###" . structure_score . "###" . consistency_score . "###" . distinct_shapes . "###" . shape_ratio . "###" . length_variance . "###" . duplicate_pct . "###" . host_ratio . "###" . source_ratio . "###" . cardinality_score . "###" . cardinality_pressure
+| eval group_key=group_value . "###" . event_count . "###" . observed_tags_joined . "###" . structure_score . "###" . consistency_score . "###" . distinct_shapes . "###" . shape_ratio . "###" . length_variance . "###" . duplicate_pct . "###" . host_ratio . "###" . source_ratio . "###" . cardinality_score . "###" . cardinality_pressure . "###" . unique_raws . "###" . distinct_hosts . "###" . distinct_sources
 
 | foreach * [
     eval present_<<FIELD>>=if(isnotnull('<<FIELD>>'),"<<FIELD>>",null())
@@ -107,7 +107,7 @@ $base_search$
 
 | fields group_key present_*
 | untable group_key temp_field field_name
-| rex field=group_key "^(?<group_value>.*?)###(?<event_count>\d+)###(?<observed_tags_joined>.*?)###(?<structure_score>[-\d.]+)###(?<consistency_score>[-\d.]+)###(?<distinct_shapes>\d+)###(?<shape_ratio>[-\d.]+)###(?<length_variance>[-\d.]+)###(?<duplicate_pct>[-\d.]+)###(?<host_ratio>[-\d.]+)###(?<source_ratio>[-\d.]+)###(?<cardinality_score>[-\d.]+)###(?<cardinality_pressure>[-\d.]+)$"
+| rex field=group_key "^(?<group_value>.*?)###(?<event_count>\d+)###(?<observed_tags_joined>.*?)###(?<structure_score>[-\d.]+)###(?<consistency_score>[-\d.]+)###(?<distinct_shapes>\d+)###(?<shape_ratio>[-\d.]+)###(?<length_variance>[-\d.]+)###(?<duplicate_pct>[-\d.]+)###(?<host_ratio>[-\d.]+)###(?<source_ratio>[-\d.]+)###(?<cardinality_score>[-\d.]+)###(?<cardinality_pressure>[-\d.]+)###(?<unique_raws>\d+)###(?<distinct_hosts>\d+)###(?<distinct_sources>\d+)$"
 | eval observed_tags=split(observed_tags_joined,"|||")
 | eval event_count=tonumber(event_count)
 | eval structure_score=tonumber(structure_score)
@@ -120,6 +120,9 @@ $base_search$
 | eval source_ratio=tonumber(source_ratio)
 | eval cardinality_score=tonumber(cardinality_score)
 | eval cardinality_pressure=tonumber(cardinality_pressure)
+| eval unique_raws=tonumber(unique_raws)
+| eval distinct_hosts=tonumber(distinct_hosts)
+| eval distinct_sources=tonumber(distinct_sources)
 
 | eval field_name=replace(field_name,"^present_","")
 | eval field_name=lower(field_name)
@@ -142,6 +145,9 @@ $base_search$
     max(source_ratio) as source_ratio
     max(cardinality_score) as cardinality_score
     max(cardinality_pressure) as cardinality_pressure
+    max(unique_raws) as unique_raws
+    max(distinct_hosts) as distinct_hosts
+    max(distinct_sources) as distinct_sources
     by group_value field_name
 
 | join type=left max=0 field_name [
@@ -156,7 +162,7 @@ $base_search$
 
 | eval in_datamodel=if(isnotnull(datamodels),1,0)
 | eval model_field=coalesce(model_field,0)
-| fields group_value field_name field_instances observed_tags event_count structure_score consistency_score distinct_shapes shape_ratio length_variance duplicate_pct host_ratio source_ratio cardinality_score cardinality_pressure datamodels in_datamodel model_field
+| fields group_value field_name field_instances observed_tags event_count structure_score consistency_score distinct_shapes shape_ratio length_variance duplicate_pct host_ratio source_ratio cardinality_score cardinality_pressure unique_raws distinct_hosts distinct_sources datamodels in_datamodel model_field
     ]]></query>
     <earliest>$time_range.earliest$</earliest>
     <latest>$time_range.latest$</latest>
@@ -338,6 +344,104 @@ $base_search$
 
   <row>
     <panel>
+      <title>Cardinality</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Per-source cardinality pressure from distinct event shapes, hosts and sources relative to sample size.</p>
+              <p><strong>How to use it:</strong> Sort by Cardinality score or Dominant Driver to find sources that may be expensive to search, accelerate or normalise.</p>
+              <p><strong>Read it as:</strong> A low score means high uniqueness per event. Ask whether host/path sprawl or unstable event shapes are expected for that source.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_quality_field_evidence">
+          <query><![CDATA[
+| stats
+    max(cardinality_score) as cardinality_score
+    max(cardinality_pressure) as cardinality_pressure
+    max(distinct_shapes) as distinct_shapes
+    max(distinct_hosts) as distinct_hosts
+    max(distinct_sources) as distinct_sources
+    max(shape_ratio) as shape_ratio
+    max(host_ratio) as host_ratio
+    max(source_ratio) as source_ratio
+    max(event_count) as event_count
+    by group_value
+| eval pressure_pct=round(coalesce(cardinality_pressure,0)*100,1)
+| eval shape_pct=round(coalesce(shape_ratio,0)*100,1)
+| eval host_pct=round(coalesce(host_ratio,0)*100,1)
+| eval source_pct=round(coalesce(source_ratio,0)*100,1)
+| eval dominant_driver=case(
+    shape_ratio>=host_ratio AND shape_ratio>=source_ratio,"Shapes",
+    host_ratio>=source_ratio,"Hosts",
+    true(),"Sources"
+)
+| sort cardinality_score
+| rename group_value as "Data Source"
+| rename cardinality_score as "Cardinality"
+| rename pressure_pct as "Pressure %"
+| rename dominant_driver as "Dominant Driver"
+| rename distinct_shapes as "Distinct Shapes"
+| rename distinct_hosts as "Distinct Hosts"
+| rename distinct_sources as "Distinct Sources"
+| rename shape_pct as "Shape %"
+| rename host_pct as "Host %"
+| rename source_pct as "Source %"
+| rename event_count as "Events Sampled"
+| table "Data Source" Cardinality "Pressure %" "Dominant Driver" "Distinct Shapes" "Distinct Hosts" "Distinct Sources" "Shape %" "Host %" "Source %" "Events Sampled"
+          ]]></query>
+        </search>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Duplication</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why This Matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Per-source share of events whose raw payload is repeated in the sample (<code>md5(_raw)</code>).</p>
+              <p><strong>How to use it:</strong> Sort by Duplication % to spot replay, double-shipping or naturally identical heartbeats.</p>
+              <p><strong>Read it as:</strong> High duplication is a question, not proof of a fault. Identical status events can be normal; unexpected repeats usually deserve collection review.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_quality_field_evidence">
+          <query><![CDATA[
+| stats
+    max(duplicate_pct) as duplicate_pct
+    max(unique_raws) as unique_raws
+    max(event_count) as event_count
+    by group_value
+| eval duplicate_events=max(event_count-unique_raws,0)
+| eval duplication_band=case(duplicate_pct<5,"Low",duplicate_pct<20,"Watch",true(),"High")
+| sort - duplicate_pct
+| rename group_value as "Data Source"
+| rename duplication_band as "Band"
+| rename duplicate_pct as "Duplication %"
+| rename unique_raws as "Unique Raws"
+| rename duplicate_events as "Duplicate Events"
+| rename event_count as "Events Sampled"
+| table "Data Source" Band "Duplication %" "Unique Raws" "Duplicate Events" "Events Sampled"
+          ]]></query>
+        </search>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Quality Issue Register</title>
       <html>
         <div class="context-toggle">
@@ -428,9 +532,9 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Recommended-field matches and related CIM tags for datamodels detected in the selected data.</p>
-              <p><strong>How to use it:</strong> Use this to see which models contribute to CIM Alignment and whether coverage tags are present.</p>
-              <p><strong>Read it as:</strong> Field evidence and tag evidence are related but separate. Governance mappings are reviewed on the Governance dashboards.</p>
+              <p><strong>What this shows:</strong> Per-source recommended-field coverage for datamodels that already have field evidence in the sample.</p>
+              <p><strong>How to use it:</strong> Use this for a quick CIM breakdown on Quality IN. For tags, missing fields and perspective detail, use Data Readiness IN.</p>
+              <p><strong>Read it as:</strong> Same CIM story as the Dimensions tile (recommended-scope coverage for matched models).</p>
             </div>
           </details>
         </div>
@@ -438,75 +542,36 @@ $base_search$
       <table>
         <search base="base_quality_field_evidence">
           <query><![CDATA[
-| where model_field=1 OR in_datamodel=1
+| where model_field=1
+| eval datamodels=if(isnull(datamodels),"__none__",datamodels)
 | mvexpand datamodels
 | rename datamodels as datamodel
-| join type=inner max=0 field_name [
-    | inputlookup datamodel_fields_lookup
-    | eval field_name=lower(trim(field_name))
-    | eval datamodel=trim(datamodel)
-    | eval recommended=if(recommended="true" OR recommended=1,1,0)
-    | eval required=if(required="true" OR required=1,1,0)
-    | where recommended=1 OR required=1
-    | fields field_name datamodel
-]
+| where datamodel!="__none__"
 | stats
-    dc(field_name) as matched_fields
-    values(field_name) as field_examples
-    values(observed_tags) as observed_tags
+    dc(field_name) as matched_scope_fields
     max(event_count) as event_count
     by group_value datamodel
 | join type=left max=0 datamodel [
-    | inputlookup cim_datamodel_tags_lookup
+    | inputlookup datamodel_fields_lookup
     | eval datamodel=trim(datamodel)
-    | eval expected_tag=lower(trim(expected_tag))
-    | eval tag_role=lower(trim(coalesce(tag_role,"supporting")))
-    | eval coverage_set=coalesce(coverage_set,"_default")
-    | where tag_role="top_level"
-    | fields datamodel expected_tag tag_role coverage_set
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="true" OR recommended=1,1,0)
+    | eval required=if(required="true" OR required=1,1,0)
+    | where recommended=1 OR required=1
+    | stats dc(field_name) as total_scope_fields by datamodel
 ]
-| eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval tag_hit=if(isnotnull(expected_tag) AND mvfind(observed_tags, expected_tag)>=0,1,0)
-| eval has_tag_mapping=if(isnotnull(expected_tag),1,0)
-| stats
-    min(eval(if(tag_role="top_level",tag_hit,null()))) as top_ok
-    max(has_tag_mapping) as has_tag_mapping
-    values(eval(if(tag_role="top_level",expected_tag,null()))) as related_cim_tags
-    max(matched_fields) as matched_fields
-    values(field_examples) as field_examples
-    values(observed_tags) as observed_tags
-    max(event_count) as event_count
-    by group_value datamodel coverage_set
-| eval set_complete=if(isnull(top_ok),0,if(top_ok=1,1,0))
-| stats
-    max(matched_fields) as matched_fields
-    values(field_examples) as field_examples
-    values(observed_tags) as observed_tags
-    values(related_cim_tags) as related_cim_tags
-    max(has_tag_mapping) as has_tag_mapping
-    max(set_complete) as coverage_complete
-    max(event_count) as event_count
-    by group_value datamodel
-| eval tag_status=case(
-    has_tag_mapping=0,"No related CIM tag mapping",
-    coverage_complete=1,"Coverage tags observed",
-    true(),"Coverage tags not observed"
-)
-| eval related_cim_tags=if(isnull(related_cim_tags),"",mvjoin(mvsort(mvdedup(related_cim_tags)),", "))
-| eval observed_tags=if(isnull(observed_tags),"",mvjoin(mvsort(mvdedup(observed_tags)),", "))
-| eval field_examples=mvjoin(mvsort(mvdedup(field_examples)),", ")
+| eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
 | rename group_value as "Data Source"
 | rename datamodel as "Datamodel"
-| rename matched_fields as "Matched Recommended Fields"
-| rename tag_status as "Coverage Tag Status"
-| rename related_cim_tags as "Related CIM Tags"
-| rename observed_tags as "Observed Tags"
-| rename field_examples as "Matched Field Examples"
-| rename event_count as "Events Analysed"
-| table "Data Source" Datamodel "Matched Recommended Fields" "Coverage Tag Status" "Related CIM Tags" "Observed Tags" "Matched Field Examples" "Events Analysed"
-| sort "Data Source" - "Matched Recommended Fields" Datamodel
+| rename matched_scope_fields as "Matched Recommended Fields"
+| rename total_scope_fields as "Total Recommended Fields"
+| rename cim_alignment_pct as "CIM Alignment %"
+| rename event_count as "Events Sampled"
+| table "Data Source" Datamodel "CIM Alignment %" "Matched Recommended Fields" "Total Recommended Fields" "Events Sampled"
+| sort "Data Source" - "CIM Alignment %" Datamodel
           ]]></query>
         </search>
+        <option name="count">10</option>
       </table>
     </panel>
   </row>
