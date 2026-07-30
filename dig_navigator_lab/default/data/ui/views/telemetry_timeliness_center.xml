@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+<dashboard script="dig_analysis_scope_kv.js,dig_delivery_summary_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
   <label>Telemetry Delivery IN</label>
 
   <fieldset submitButton="false" autoRun="false">
@@ -153,6 +153,31 @@ $base_search$
     <latest>$time_range.latest$</latest>
   </search>
 
+  <search id="tile_delivery_summary" base="base_timeliness_evidence">
+    <query><![CDATA[
+| stats
+    count as events_sampled
+    median(ingest_delay_seconds) as median_delay_seconds
+    perc95(ingest_delay_seconds) as p95_delay_seconds
+    max(ingest_delay_seconds) as max_delay_seconds
+    avg(healthy_seconds) as expected_healthy_seconds
+    avg(warning_seconds) as expected_warning_seconds
+    count(eval(delay_category="Healthy")) as healthy_delay_events
+    count(eval(delay_category="Warning")) as warning_delay_events
+    count(eval(delay_category="Poor")) as poor_delay_events
+    count(eval(delay_category="Critical")) as critical_delay_events
+    count(eval(timestamp_indicator="Future timestamp")) as future_timestamp_events
+    count(eval(timestamp_indicator="Old event at index time")) as old_event_at_index_events
+| eval median_delay=case(abs(median_delay_seconds)<60,tostring(round(median_delay_seconds,0))."s",abs(median_delay_seconds)<3600,tostring(round(median_delay_seconds/60,1))."m",abs(median_delay_seconds)<86400,tostring(round(median_delay_seconds/3600,1))."h",true(),tostring(round(median_delay_seconds/86400,1))."d")
+| eval p95_delay=case(abs(p95_delay_seconds)<60,tostring(round(p95_delay_seconds,0))."s",abs(p95_delay_seconds)<3600,tostring(round(p95_delay_seconds/60,1))."m",abs(p95_delay_seconds)<86400,tostring(round(p95_delay_seconds/3600,1))."h",true(),tostring(round(p95_delay_seconds/86400,1))."d")
+| eval max_delay=case(abs(max_delay_seconds)<60,tostring(round(max_delay_seconds,0))."s",abs(max_delay_seconds)<3600,tostring(round(max_delay_seconds/60,1))."m",abs(max_delay_seconds)<86400,tostring(round(max_delay_seconds/3600,1))."h",true(),tostring(round(max_delay_seconds/86400,1))."d")
+| eval worst_observed_status=case(future_timestamp_events>0,"Future timestamp",critical_delay_events>0,"Critical",poor_delay_events>0,"Poor",warning_delay_events>0,"Warning",true(),"Healthy")
+| eval expected_healthy_seconds=round(coalesce(expected_healthy_seconds,300),0)
+| eval expected_warning_seconds=round(coalesce(expected_warning_seconds,1800),0)
+| fields events_sampled median_delay p95_delay max_delay median_delay_seconds p95_delay_seconds max_delay_seconds expected_healthy_seconds expected_warning_seconds healthy_delay_events warning_delay_events poor_delay_events critical_delay_events future_timestamp_events old_event_at_index_events worst_observed_status
+    ]]></query>
+  </search>
+
   <row>
     <panel>
       <html>
@@ -173,51 +198,8 @@ $base_search$
     <panel>
       <title>Delivery Summary</title>
       <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why This Matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Summary delivery delay statistics for the selected telemetry sample.</p>
-              <p><strong>How it is calculated:</strong> Delay is calculated as <code>_indextime - _time</code>. Median and percentile values are less sensitive to outliers than a simple average.</p>
-              <p><strong>Read it as:</strong> High delay can indicate delivery backlog, batch collection, API polling delay, or incorrect timestamp extraction. Use the timestamp panels to separate expected delay from timestamp quality issues.</p>
-            </div>
-          </details>
-        </div>
+        <div id="dig-delivery-summary-tiles"></div>
       </html>
-      <table>
-        <search base="base_timeliness_evidence">
-          <query><![CDATA[
-| stats
-    count as events_sampled
-    median(ingest_delay_seconds) as median_delay_seconds
-    perc95(ingest_delay_seconds) as p95_delay_seconds
-    max(ingest_delay_seconds) as max_delay_seconds
-    count(eval(delay_category="Healthy")) as healthy_delay_events
-    count(eval(delay_category="Warning")) as warning_delay_events
-    count(eval(delay_category="Poor")) as poor_delay_events
-    count(eval(delay_category="Critical")) as critical_delay_events
-    count(eval(timestamp_indicator="Future timestamp")) as future_timestamp_events
-    count(eval(timestamp_indicator="Old event at index time")) as old_event_at_index_events
-| eval median_delay=case(abs(median_delay_seconds)<60,tostring(round(median_delay_seconds,0))."s",abs(median_delay_seconds)<3600,tostring(round(median_delay_seconds/60,1))."m",abs(median_delay_seconds)<86400,tostring(round(median_delay_seconds/3600,1))."h",true(),tostring(round(median_delay_seconds/86400,1))."d")
-| eval p95_delay=case(abs(p95_delay_seconds)<60,tostring(round(p95_delay_seconds,0))."s",abs(p95_delay_seconds)<3600,tostring(round(p95_delay_seconds/60,1))."m",abs(p95_delay_seconds)<86400,tostring(round(p95_delay_seconds/3600,1))."h",true(),tostring(round(p95_delay_seconds/86400,1))."d")
-| eval max_delay=case(abs(max_delay_seconds)<60,tostring(round(max_delay_seconds,0))."s",abs(max_delay_seconds)<3600,tostring(round(max_delay_seconds/60,1))."m",abs(max_delay_seconds)<86400,tostring(round(max_delay_seconds/3600,1))."h",true(),tostring(round(max_delay_seconds/86400,1))."d")
-| eval worst_observed_status=case(future_timestamp_events>0,"Future timestamp",critical_delay_events>0,"Critical",poor_delay_events>0,"Poor",warning_delay_events>0,"Warning",true(),"Healthy")
-| rename events_sampled as "Events Sampled"
-| rename median_delay as "Median Delay"
-| rename p95_delay as "P95 Delay"
-| rename max_delay as "Max Delay"
-| rename healthy_delay_events as "Healthy"
-| rename warning_delay_events as "Warning"
-| rename poor_delay_events as "Poor"
-| rename critical_delay_events as "Critical"
-| rename future_timestamp_events as "Future Timestamps"
-| rename old_event_at_index_events as "Over 30 Days Old"
-| rename worst_observed_status as "Worst Status"
-| table "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Future Timestamps" "Over 30 Days Old" "Worst Status"
-          ]]></query>
-        </search>
-        <option name="count">5</option>
-      </table>
     </panel>
   </row>
 
