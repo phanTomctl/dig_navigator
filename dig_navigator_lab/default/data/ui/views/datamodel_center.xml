@@ -326,7 +326,7 @@ $base_search$
 
   <row>
     <panel>
-      <title>Missing Required / Recommended Fields</title>
+      <title>Missing Required Fields</title>
       <html>
         <div class="context-toggle">
           <details>
@@ -415,20 +415,14 @@ $base_search$
         values(eval(if(tag_role="top_level",expected_tag,null()))) as top_level_tags
         values(eval(if(tag_role="supporting",expected_tag,null()))) as supporting_tags
         values(eval(if(tag_role="constraint",expected_tag,null()))) as constraint_tags
-        values(expected_tag) as expected_tags
         by datamodel_key coverage_set
 ]
 | eval observed_tags=mvmap(observed_tags, lower(trim(observed_tags)))
-| eval expected_tags=coalesce(expected_tags,"No expected tags mapped")
-| eval top_level_tags=coalesce(top_level_tags,"No top-level tags mapped")
-| eval supporting_tags=coalesce(supporting_tags,"No supporting tags mapped")
-| eval constraint_tags=coalesce(constraint_tags,"No constraint tags mapped")
-| eval observed_tags=coalesce(observed_tags,"No observed tags")
-| eval top_level_eval=top_level_tags
+| eval top_level_eval=if(isnull(top_level_tags),"__none__",top_level_tags)
 | mvexpand top_level_eval
 | eval top_hit=case(
-    top_level_eval="No top-level tags mapped",null(),
-    observed_tags="No observed tags",0,
+    top_level_eval="__none__",null(),
+    isnull(observed_tags),0,
     mvfind(observed_tags, top_level_eval)>=0,1,
     true(),0
 )
@@ -458,10 +452,10 @@ $base_search$
     mvfind(set_complete,"no")>=0,"no",
     true(),"unknown"
 )
-| eval top_level_tags=mvjoin(mvsort(mvdedup(top_level_tags)),", ")
-| eval supporting_tags=mvjoin(mvsort(mvdedup(supporting_tags)),", ")
-| eval constraint_tags=mvjoin(mvsort(mvdedup(constraint_tags)),", ")
-| eval observed_tags=mvjoin(mvsort(observed_tags),", ")
+| eval top_level_tags=if(isnull(top_level_tags),"No top-level tags mapped",mvjoin(mvsort(mvdedup(top_level_tags)),", "))
+| eval supporting_tags=if(isnull(supporting_tags),"No supporting tags mapped",mvjoin(mvsort(mvdedup(supporting_tags)),", "))
+| eval constraint_tags=if(isnull(constraint_tags),"No constraint tags mapped",mvjoin(mvsort(mvdedup(constraint_tags)),", "))
+| eval observed_tags=if(isnull(observed_tags),"No observed tags",mvjoin(mvsort(observed_tags),", "))
 | rename datamodel as Datamodel
 | rename group_value as "Data Source"
 | rename top_level_tags as "Top-Level Tags"
