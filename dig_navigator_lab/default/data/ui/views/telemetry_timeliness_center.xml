@@ -60,7 +60,7 @@ $base_search$
       <choice value="*">All</choice>
       <choice value="Within configured bounds">Within configured bounds</choice>
       <choice value="Future timestamp">Future timestamp</choice>
-      <choice value="Old event at index time">Old event at index time</choice>
+      <choice value="Old event at index time">Over 30 days old at index</choice>
       <default>*</default>
       <delimiter>|</delimiter>
     </input>
@@ -211,9 +211,9 @@ $base_search$
 | rename poor_delay_events as "Poor"
 | rename critical_delay_events as "Critical"
 | rename future_timestamp_events as "Future Timestamps"
-| rename old_event_at_index_events as "Old at Index"
+| rename old_event_at_index_events as "Over 30 Days Old"
 | rename worst_observed_status as "Worst Status"
-| table "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Future Timestamps" "Old at Index" "Worst Status"
+| table "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Future Timestamps" "Over 30 Days Old" "Worst Status"
           ]]></query>
         </search>
         <option name="count">5</option>
@@ -383,12 +383,12 @@ $base_search$
 | rename critical_delay_events as "Critical"
 | rename critical_boundary as "Critical Boundary"
 | rename future_timestamp_events as "Future Timestamps"
-| rename old_event_at_index_events as "Old at Index"
+| rename old_event_at_index_events as "Over 30 Days Old"
 | rename latest_event_time as "Latest Event Time"
 | rename latest_index_time as "Latest Index Time"
 | rename rule_source as "Rule Source"
 | rename rule_note as "Rule Note"
-| table "Data Source" "Worst Status" "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Critical Boundary" "Future Timestamps" "Old at Index" "Latest Event Time" "Latest Index Time" "Rule Source" "Rule Note"
+| table "Data Source" "Worst Status" "Events Sampled" "Median Delay" "P95 Delay" "Max Delay" Healthy Warning Poor Critical "Critical Boundary" "Future Timestamps" "Over 30 Days Old" "Latest Event Time" "Latest Index Time" "Rule Source" "Rule Note"
           ]]></query>
         </search>
         <option name="count">5</option>
@@ -404,8 +404,8 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Events whose event time is ahead of index time, or unusually old at the point of indexing.</p>
-              <p><strong>How to use it:</strong> Future timestamps usually indicate source clock skew, timezone handling, or timestamp parsing issues. They are important to surface because future-dated events can be missed by time-bounded searches and detections until the event time becomes current. Very old timestamps may be normal for backfill data, but can also indicate parser or source replay problems.</p>
+              <p><strong>What this shows:</strong> Events whose event time is ahead of index time, or already more than 30 days old when indexed.</p>
+              <p><strong>How to use it:</strong> Future timestamps usually indicate source clock skew, timezone handling, or timestamp parsing issues. They are important to surface because future-dated events can be missed by time-bounded searches and detections until the event time becomes current. Events over 30 days old at index time may be normal for intentional backfill, but can also indicate parser issues or unexpected historical replay.</p>
             </div>
           </details>
         </div>
@@ -418,6 +418,7 @@ $base_search$
 | stats sum(count) as count by timestamp_indicator
 | eval sort_order=case(timestamp_indicator="Within configured bounds",1,timestamp_indicator="Future timestamp",2,timestamp_indicator="Old event at index time",3,true(),99)
 | sort sort_order
+| eval timestamp_indicator=case(timestamp_indicator="Old event at index time","Over 30 days old at index",true(),timestamp_indicator)
 | rename timestamp_indicator as "Timestamp Integrity"
 | rename count as "Events"
 | fields "Timestamp Integrity" Events
