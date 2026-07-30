@@ -31,6 +31,7 @@
       <search>
         <query><![CDATA[
 $base_search$
+| head $sample_limit$
 | eval group_value=if("$group_by$"="source", source, sourcetype)
 | eval group_value=coalesce(group_value,"unknown")
 | stats count by group_value
@@ -67,7 +68,7 @@ $base_search$
 
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
-      <default>5000</default>
+      <default>1000</default>
     </input>
 
   </fieldset>
@@ -146,7 +147,7 @@ $base_search$
 | eval event_time_readable=strftime(event_time,"%Y-%m-%d %H:%M:%S")
 | eval index_time_readable=strftime(index_time,"%Y-%m-%d %H:%M:%S")
 | eval raw_preview=if(len(_raw)>500, substr(_raw,1,500) . " ... [TRUNCATED]", _raw)
-| fields _time event_time index_time event_time_readable index_time_readable index host source sourcetype group_value ingest_delay_seconds ingest_delay_display delay_category timestamp_indicator healthy_seconds warning_seconds poor_seconds healthy_display warning_display poor_display old_event_seconds future_skew_seconds timeliness_rule_source expected_range timeliness_rule_note raw_preview _raw
+| fields _time event_time index_time event_time_readable index_time_readable index host source sourcetype group_value ingest_delay_seconds ingest_delay_display delay_category timestamp_indicator healthy_seconds warning_seconds poor_seconds healthy_display warning_display poor_display old_event_seconds future_skew_seconds timeliness_rule_source expected_range timeliness_rule_note raw_preview
     ]]></query>
     <earliest>$time_range.earliest$</earliest>
     <latest>$time_range.latest$</latest>
@@ -440,7 +441,16 @@ $base_search$
           <query><![CDATA[
 | sort - ingest_delay_seconds
 | head 25
-| fields group_value sourcetype source host event_time_readable index_time_readable ingest_delay_display delay_category timestamp_indicator timeliness_rule_source timeliness_rule_note raw_preview
+| rename group_value as "Data Source"
+| rename event_time_readable as "Event Time"
+| rename index_time_readable as "Index Time"
+| rename ingest_delay_display as "Delay"
+| rename delay_category as "Delay Category"
+| rename timestamp_indicator as "Timestamp Integrity"
+| rename timeliness_rule_source as "Rule Source"
+| rename timeliness_rule_note as "Rule Note"
+| rename raw_preview as "Raw Preview"
+| table "Data Source" sourcetype source host "Event Time" "Index Time" Delay "Delay Category" "Timestamp Integrity" "Rule Source" "Rule Note" "Raw Preview"
           ]]></query>
         </search>
         <option name="count">5</option>
