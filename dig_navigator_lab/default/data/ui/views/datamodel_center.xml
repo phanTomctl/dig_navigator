@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_v2.js" version="1.1" stylesheet="devnull.css">
+<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
   <label>Data Readiness IN</label>
 
   <fieldset submitButton="false" autoRun="false">

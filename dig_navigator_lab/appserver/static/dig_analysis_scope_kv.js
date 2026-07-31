@@ -1,13 +1,20 @@
 /*
- * DIG Analysis Scope v2 (cache-busted filename)
+ * DIG Analysis Scope
  *
- * Fixes vs dig_analysis_scope_kv.js:
- * - Sync live Analysis Scope text into default+submitted tokens on every edit
- *   so SimpleXML drilldowns ($base_search$) see unsaved scope.
- * - Stash scope in sessionStorage + rewrite window.open / anchor URLs at click.
- * - Landing: stash, then any URL form.base_search, then KV (never let KV win a drilldown).
- * - Cancel KV/URL reapply when the user edits so reapply cannot fight typing.
- * - DIG-owned Show/Hide Filters (inject CSS + hide native Splunk control in JS).
+ * KV Store-backed per-user Analysis Scope for DIG dashboards.
+ * Saves/restores the common scope inputs used across DIG dashboards:
+ *   base_search, time_range earliest/latest, group_by, sample_limit.
+ *
+ * Design notes:
+ * - No dependency on splunkjs/mvc/simplexml/submit; that module is not present in
+ *   some Splunk 10 builds and can break dashboard loading.
+ * - Direct opens load saved per-user KV scope.
+ * - Drilldowns stash live scope in sessionStorage at click time and rewrite
+ *   form.base_search (etc.) in the href from the visible inputs — SimpleXML
+ *   $base_search$ / $form.base_search$ are not reliable for unsaved edits.
+ * - Landing pages consume the stash (then URL) before KV so saved scope cannot win.
+ * - Native Splunk Hide Filters control is hidden; DIG owns Show/Hide Filters in
+ *   the Analysis Scope toolbar via body.dig-filters-hidden.
  */
 require([
     "jquery",
@@ -17,7 +24,6 @@ require([
 ], function($, mvc, utils) {
     "use strict";
 
-    var SCOPE_JS_VERSION = "v2-20260731";
     var DEFAULT_SCOPE = {
         base_search: "index=somerandomindex sourcetype=mysourcetype",
         earliest: "-24h",
@@ -31,13 +37,6 @@ require([
     var endpoint = makeUrl("/splunkd/__raw/servicesNS/nobody/dig_navigator_lab/analysis_scope?output_mode=json");
     var defaultTokens = mvc.Components.get("default");
     var submittedTokens = mvc.Components.get("submitted");
-    var scopeReapplyTimers = [];
-    var filtersCollapsed = false;
-    var userEditing = false;
-
-    if (window.console && console.info) {
-        console.info("DIG Analysis Scope " + SCOPE_JS_VERSION + " loaded");
-    }
 
     function makeUrl(path) {
         try {
@@ -129,6 +128,9 @@ require([
         return value === "" || value === "*";
     }
 
+    var scopeReapplyTimers = [];
+    var filtersCollapsed = false;
+
     function clearScopeReapply() {
         scopeReapplyTimers.forEach(function(timerId) {
             window.clearTimeout(timerId);
@@ -147,12 +149,9 @@ require([
                 return;
             }
             var timerId = window.setTimeout(function() {
-                if (userEditing) {
-                    return;
-                }
                 var current = readCurrentScope();
                 if (!scopesEqual(current, scope)) {
-                    setScopeTokens(scope, { refresh: true, updateInputs: true });
+                    setScopeTokens(scope);
                 }
                 tick(remaining - 1);
             }, 500);
@@ -163,6 +162,8 @@ require([
     }
 
     function hasMeaningfulDrilldownContext(params) {
+        // Treat as drilldown when a context token carries a specific non-wildcard
+        // value that should override the saved Analysis Scope.
         var markerGroups = [
             ["form.selected_group", "selected_group"],
             ["form.classification", "classification"],
@@ -206,17 +207,12 @@ require([
         });
     }
 
-    function getUrlDrilldownScope() {
+    function getUrlScopeIfMeaningful() {
         var params = parseQuery();
-        var baseSearch = getQueryValue(params, ["form.base_search", "base_search"]);
-        // Any non-empty form.base_search in the URL is a drilldown override.
-        if (baseSearch !== null && String(baseSearch).trim() !== "") {
-            return getUrlScopeFromParams(params);
+        if (!hasMeaningfulDrilldownContext(params)) {
+            return null;
         }
-        if (hasMeaningfulDrilldownContext(params)) {
-            return getUrlScopeFromParams(params);
-        }
-        return null;
+        return getUrlScopeFromParams(params);
     }
 
     function stashDrilldownScope(scope) {
@@ -255,10 +251,7 @@ require([
             }
             var eq = part.indexOf("=");
             var key = eq >= 0 ? part.substring(0, eq) : part;
-            try {
-                key = decodeURIComponent(key.replace(/\+/g, " "));
-            } catch (e) {}
-            if (key === name || key === encodedName) {
+            if (key === encodedName || key === name) {
                 found = true;
                 return encodedName + "=" + encodedValue;
             }
@@ -275,11 +268,10 @@ require([
     function applyLiveScopeToUrl(url) {
         var scope = readCurrentScope();
         stashDrilldownScope(scope);
-        syncTokensFromLiveScope();
         if (!url || typeof url !== "string") {
             return url;
         }
-        if (url.indexOf("base_search=") < 0) {
+        if (url.indexOf("form.base_search=") < 0 && url.indexOf("base_search=") < 0) {
             return url;
         }
         var next = url;
@@ -292,42 +284,32 @@ require([
     }
 
     function installDrilldownScopeRewrite() {
-        document.addEventListener("mousedown", function() {
-            try {
-                stashDrilldownScope(readCurrentScope());
-                syncTokensFromLiveScope();
-            } catch (e) {}
-        }, true);
+        // Stash early: Splunk often builds the drilldown URL from tokens and
+        // window.open()s it — there may be no <a href> for us to rewrite.
+        $(document).on("mousedown", ".dashboard-element, .dashboard-panel, .panel-element", function() {
+            stashDrilldownScope(readCurrentScope());
+        });
 
-        document.addEventListener("click", function(e) {
-            var node = e.target;
-            while (node && node !== document && node.tagName !== "A") {
-                node = node.parentNode;
-            }
-            if (!node || node.tagName !== "A") {
-                return;
-            }
-            var href = node.getAttribute("href");
-            if (!href || href.indexOf("base_search=") < 0) {
-                return;
-            }
+        $(document).on("click", "a[href*='form.base_search='], a[href*='base_search=']", function() {
+            var href = $(this).attr("href");
             var next = applyLiveScopeToUrl(href);
             if (next && next !== href) {
-                node.setAttribute("href", next);
+                $(this).attr("href", next);
             }
-        }, true);
+        });
 
         try {
-            if (!window.__digOpenPatchedV2) {
-                window.__digOpenPatchedV2 = true;
-                var origOpen = window.open;
-                window.open = function(url, name, specs) {
-                    try {
-                        url = applyLiveScopeToUrl(url);
-                    } catch (e) {}
-                    return origOpen.call(window, url, name, specs);
-                };
+            if (window.__digOpenPatched) {
+                return;
             }
+            window.__digOpenPatched = true;
+            var origOpen = window.open;
+            window.open = function(url, name, specs) {
+                try {
+                    url = applyLiveScopeToUrl(url);
+                } catch (e) {}
+                return origOpen.call(window, url, name, specs);
+            };
         } catch (e) {}
     }
 
@@ -388,12 +370,6 @@ require([
     function readDomTextValue(containerClass) {
         var $input = $(containerClass).find("input[type='text'], input[data-test='textbox'], textarea").first();
         if (!$input.length) {
-            $input = $(".dashboard-form-globalfieldset input[type='text']").first();
-            if (containerClass.indexOf("sample") >= 0) {
-                $input = $(".dashboard-form-globalfieldset .dig-sample-limit-input input, .dashboard-form-globalfieldset input").eq(1);
-            }
-        }
-        if (!$input.length) {
             return null;
         }
         var value = $input.val();
@@ -413,6 +389,7 @@ require([
             latest = timeValue.latest_time || timeValue.latest || latest;
         }
 
+        // Prefer visible DOM values — tokens lag when the user edits without Apply.
         var baseSearch = readDomTextValue(".dig-analysis-scope-input") ||
             readComponentValue("base_search") ||
             getToken("form.base_search", "base_search", DEFAULT_SCOPE.base_search);
@@ -448,7 +425,9 @@ require([
         } catch (e) {}
     }
 
-    function pushScopePairs(scope) {
+    function setScopeTokens(scope) {
+        scope = normaliseScope(scope);
+
         var pairs = {
             "base_search": scope.base_search,
             "form.base_search": scope.base_search,
@@ -466,26 +445,10 @@ require([
             setModelToken(defaultTokens, name, pairs[name]);
             setModelToken(submittedTokens, name, pairs[name]);
         });
-    }
 
-    function syncTokensFromLiveScope() {
-        var scope = normaliseScope(readCurrentScope());
-        pushScopePairs(scope);
+        updateVisibleInputs(scope);
         updateScopeSummary(scope);
-        return scope;
-    }
-
-    function setScopeTokens(scope, options) {
-        options = options || {};
-        scope = normaliseScope(scope);
-        pushScopePairs(scope);
-        if (options.updateInputs !== false) {
-            updateVisibleInputs(scope);
-        }
-        updateScopeSummary(scope);
-        if (options.refresh !== false) {
-            refreshSearches();
-        }
+        refreshSearches();
     }
 
     function updateVisibleInputs(scope) {
@@ -505,6 +468,12 @@ require([
     }
 
     function refreshSearches() {
+        try {
+            if (submittedTokens && typeof submittedTokens.trigger === "function") {
+                submittedTokens.trigger("change");
+            }
+        } catch (e) {}
+
         try {
             if (!mvc.Components || typeof mvc.Components.getInstances !== "function") {
                 return;
@@ -551,55 +520,27 @@ require([
         });
     }
 
-    function injectCriticalCss() {
-        if ($("#dig_scope_v2_css").length) {
-            return;
+    function isFieldsetHidden() {
+        var fieldset = $(".dashboard-form-globalfieldset, .fieldset, fieldset").first();
+        if (!fieldset.length) {
+            return false;
         }
-        var css = "" +
-            ".hide-global-filters,.show-global-filters,a.hide-global-filters,a.show-global-filters," +
-            "[data-test='hide-filters'],[data-test='show-filters']{display:none!important;}" +
-            ".dig-scope-toolbar{margin:8px 0 14px 0;padding:8px 10px;border:1px solid rgba(125,255,154,.22);" +
-            "border-radius:6px;background:rgba(2,20,12,.72);display:flex;flex-direction:column;gap:6px;}" +
-            ".dig-scope-summary-row{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px;}" +
-            ".dig-scope-summary{font-size:12px;line-height:1.35;color:#fff;opacity:.92;word-break:break-word;flex:1 1 auto;}" +
-            ".dig-scope-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}" +
-            ".dig-scope-help{font-size:12px;opacity:.78;line-height:1.35;}" +
-            ".dig-filter-toggle{flex:0 0 auto;white-space:nowrap;}" +
-            "body.dig-filters-hidden .dashboard-form-globalfieldset .input," +
-            "body.dig-filters-hidden .dashboard-form-globalfieldset .form-submit," +
-            "body.dig-filters-hidden .dashboard-form-globalfieldset .dashboard-form-submit," +
-            "body.dig-filters-hidden .dashboard-form-globalfieldset .splunk-submit-button{display:none!important;}" +
-            "body.dig-filters-hidden #dig_scope_toolbar .dig-scope-actions," +
-            "body.dig-filters-hidden #dig_scope_toolbar .dig-scope-help{display:none!important;}" +
-            "body.dig-filters-hidden #dig_scope_toolbar .dig-scope-summary-row{display:flex!important;}" +
-            "body.dig-filters-hidden #dig_toggle_filters{display:inline-block!important;}";
-        $("<style id='dig_scope_v2_css' type='text/css'></style>").text(css).appendTo("head");
+        return !fieldset.is(":visible");
     }
 
-    function hideNativeFilterControls() {
-        $(".hide-global-filters, .show-global-filters, a.hide-global-filters, a.show-global-filters").hide();
-        $("a, button, span").each(function() {
-            var t = $.trim($(this).text() || "").toLowerCase();
-            if (t === "hide filters" || t === "show filters") {
-                if ($(this).closest("#dig_scope_toolbar").length) {
-                    return;
-                }
-                $(this).hide();
-            }
-        });
+    function updateCollapsedState() {
+        var hidden = isFieldsetHidden();
+        $("#dig_scope_toolbar").toggleClass("dig-scope-collapsed", hidden);
+        updateScopeSummary(readCurrentScope());
     }
 
     function injectToolbar() {
         if ($("#dig_scope_toolbar").length) {
-            if (!$("#dig_toggle_filters").length) {
-                $("#dig_scope_summary").wrap('<div class="dig-scope-summary-row"></div>');
-                $("#dig_scope_summary").after('<button id="dig_toggle_filters" type="button" class="btn dig-filter-toggle">Hide Filters</button>');
-            }
             return;
         }
 
-        var html = "" +
-            '<div id="dig_scope_toolbar" class="dig-scope-toolbar" data-dig-scope-version="' + SCOPE_JS_VERSION + '">' +
+        var html = '' +
+            '<div id="dig_scope_toolbar" class="dig-scope-toolbar">' +
             '  <div class="dig-scope-summary-row">' +
             '    <div id="dig_scope_summary" class="dig-scope-summary"></div>' +
             '    <button id="dig_toggle_filters" type="button" class="btn dig-filter-toggle">Hide Filters</button>' +
@@ -610,7 +551,7 @@ require([
             '    <button id="dig_reset_scope" type="button" class="btn">Reset Scope</button>' +
             '    <span id="dig_scope_status" class="dig-scope-status"></span>' +
             '  </div>' +
-            '  <div class="dig-scope-help">Saved per Splunk user. Edit Analysis Scope anytime — drilldowns use the live text box. Apply Scope only saves it. Sample event limit capped at 100000.</div>' +
+            '  <div class="dig-scope-help">Saved per Splunk user. Direct dashboard opens use the saved scope automatically. Drilldowns can temporarily override it. Sample event limit is capped at 100000.</div>' +
             '</div>';
 
         var fieldset = $(".dashboard-form-globalfieldset, .fieldset, fieldset").first();
@@ -634,23 +575,23 @@ require([
                     var stashed = consumeStashedDrilldownScope();
                     if (stashed) {
                         clearScopeReapply();
-                        setScopeTokens(stashed, { refresh: true, updateInputs: true });
-                        scheduleScopeReapply(stashed, 8);
+                        setScopeTokens(stashed);
+                        scheduleScopeReapply(stashed, 6);
                         updateStatus("Using drilldown scope. Click Apply Scope to save it.", false);
                         return;
                     }
 
-                    var urlScope = getUrlDrilldownScope();
+                    var urlScope = getUrlScopeIfMeaningful();
                     if (urlScope) {
                         clearScopeReapply();
-                        setScopeTokens(urlScope, { refresh: true, updateInputs: true });
-                        scheduleScopeReapply(urlScope, 8);
+                        setScopeTokens(urlScope);
+                        scheduleScopeReapply(urlScope, 6);
                         updateStatus("Using drilldown scope. Click Apply Scope to save it.", false);
                         return;
                     }
                 }
 
-                setScopeTokens(scope, { refresh: true, updateInputs: true });
+                setScopeTokens(scope);
                 scheduleScopeReapply(scope, 4);
                 if (scope && scope.is_default) {
                     updateStatus("Default safe scope loaded. Set a valid Analysis Scope and click Apply Scope.", false);
@@ -659,7 +600,7 @@ require([
                 }
             },
             error: function(xhr) {
-                setScopeTokens(DEFAULT_SCOPE, { refresh: true, updateInputs: true });
+                setScopeTokens(DEFAULT_SCOPE);
                 updateStatus("Unable to load saved Analysis Scope: " + xhr.status, true);
             }
         });
@@ -676,7 +617,7 @@ require([
             dataType: "json",
             cache: false,
             success: function(saved) {
-                setScopeTokens(saved, { refresh: true, updateInputs: true });
+                setScopeTokens(saved);
                 if (action === "reset") {
                     updateStatus("Scope reset to safe default.", false);
                 } else {
@@ -689,20 +630,12 @@ require([
         });
     }
 
+
+
     function applyFiltersCollapsedState() {
         $(document.body).toggleClass("dig-filters-hidden", filtersCollapsed);
         $("#dig_scope_toolbar").toggleClass("dig-scope-collapsed", filtersCollapsed);
-        var $fieldset = $(".dashboard-form-globalfieldset, .fieldset").first();
-        $fieldset.toggleClass("dig-fieldset-collapsed", filtersCollapsed);
-
-        // Direct style backup — does not depend on stylesheet cache.
-        if (filtersCollapsed) {
-            $fieldset.find(".input, .form-submit, .dashboard-form-submit, .splunk-submit-button").hide();
-            $("#dig_scope_toolbar .dig-scope-actions, #dig_scope_toolbar .dig-scope-help").hide();
-        } else {
-            $fieldset.find(".input, .form-submit, .dashboard-form-submit, .splunk-submit-button").show();
-            $("#dig_scope_toolbar .dig-scope-actions, #dig_scope_toolbar .dig-scope-help").show();
-        }
+        $(".dashboard-form-globalfieldset, .fieldset").first().toggleClass("dig-fieldset-collapsed", filtersCollapsed);
 
         var $toggle = $("#dig_toggle_filters");
         if ($toggle.length) {
@@ -710,7 +643,6 @@ require([
             $toggle.attr("aria-expanded", filtersCollapsed ? "false" : "true");
         }
 
-        hideNativeFilterControls();
         updateScopeSummary(readCurrentScope());
     }
 
@@ -720,48 +652,22 @@ require([
     }
 
     function installFilterVisibilitySync() {
+        // Own the control — do not depend on Splunk's native Hide Filters link.
         $(document).on("click", "#dig_toggle_filters", function(e) {
             e.preventDefault();
             e.stopPropagation();
             setFiltersCollapsed(!filtersCollapsed);
         });
-        // Keep native control suppressed if Splunk re-renders it.
-        window.setInterval(hideNativeFilterControls, 1000);
-    }
-
-    function installLiveTokenSync() {
-        function onUserEdit() {
-            userEditing = true;
-            clearScopeReapply();
-            syncTokensFromLiveScope();
-            window.setTimeout(function() {
-                userEditing = false;
-            }, 1500);
-        }
-
-        $(document).on("input change keyup blur", ".dig-analysis-scope-input input, .dig-sample-limit-input input", onUserEdit);
-
-        getInputComponents().forEach(function(item) {
-            try {
-                if (item.component && typeof item.component.on === "function") {
-                    item.component.on("change", function() {
-                        onUserEdit();
-                    });
-                }
-            } catch (e) {}
-        });
     }
 
     try {
-        injectCriticalCss();
         injectToolbar();
         markScopeInputs();
         updateScopeSummary(readCurrentScope());
+        updateCollapsedState();
         installFilterVisibilitySync();
         installDrilldownScopeRewrite();
-        installLiveTokenSync();
         applyFiltersCollapsedState();
-        hideNativeFilterControls();
 
         $(document).on("click", "#dig_apply_scope", function(e) {
             e.preventDefault();
@@ -780,18 +686,26 @@ require([
             saveScope("reset");
         });
 
+
+        getInputComponents().forEach(function(item) {
+            try {
+                if (item.component && typeof item.component.on === "function") {
+                    item.component.on("change", function() {
+                        window.setTimeout(function() { updateScopeSummary(readCurrentScope()); }, 50);
+                    });
+                }
+            } catch (e) {}
+        });
+
         window.setTimeout(function() {
             markScopeInputs();
+            updateCollapsedState();
             applyFiltersCollapsedState();
-            hideNativeFilterControls();
             loadScope(true, false);
         }, 250);
-
-        window.setTimeout(hideNativeFilterControls, 1000);
-        window.setTimeout(hideNativeFilterControls, 2500);
     } catch (e) {
         if (window.console && console.error) {
-            console.error("DIG Analysis Scope v2 initialisation failed", e);
+            console.error("DIG Analysis Scope initialisation failed", e);
         }
         updateStatus("Analysis Scope initialisation failed. See browser console.", true);
     }
