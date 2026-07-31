@@ -15,6 +15,9 @@
  *   carries a specific non-wildcard value (not dashboard-local filters).
  * - Scope is applied to default and submitted token models, then searches are
  *   restarted defensively for direct dashboard opens.
+ * - Hide/Show Filters sync uses Splunk's .hide-global-filters /
+ *   .show-global-filters classes (text fallback) so the control label stays correct
+ *   when DIG collapses fieldset inputs via body.dig-filters-hidden.
  */
 require([
     "jquery",
@@ -484,19 +487,17 @@ require([
 
 
 
-    function getFilterToggleText() {
-        var text = "";
-        $("a, button").each(function() {
-            var t = $.trim($(this).text() || "").toLowerCase();
-            if (t === "show filters" || t === "hide filters") {
-                text = t;
-                return false;
-            }
-        });
-        return text;
-    }
-
     function getFilterToggleElement() {
+        var show = $(".show-global-filters").first();
+        if (show.length) {
+            return show;
+        }
+        var hide = $(".hide-global-filters").first();
+        if (hide.length) {
+            return hide;
+        }
+
+        // Fallback for builds that only expose link text.
         var found = $();
         $("a, button").each(function() {
             var t = $.trim($(this).text() || "").toLowerCase();
@@ -508,6 +509,28 @@ require([
         return found;
     }
 
+    function areFiltersCollapsed() {
+        if ($(".show-global-filters").length) {
+            return true;
+        }
+        if ($(".hide-global-filters").length) {
+            return false;
+        }
+
+        var toggle = getFilterToggleElement();
+        if (toggle.length) {
+            var text = $.trim(toggle.text() || "").toLowerCase();
+            if (text === "show filters") {
+                return true;
+            }
+            if (text === "hide filters") {
+                return false;
+            }
+        }
+
+        return isFieldsetHidden();
+    }
+
     function normaliseFilterToggleLabel(hidden) {
         var toggle = getFilterToggleElement();
         if (!toggle.length) {
@@ -516,39 +539,37 @@ require([
 
         toggle.text(hidden ? "Show Filters" : "Hide Filters");
         toggle.attr("aria-expanded", hidden ? "false" : "true");
-    }    
+        toggle.toggleClass("show-global-filters", !!hidden);
+        toggle.toggleClass("hide-global-filters", !hidden);
+    }
 
     function applyFilterVisibilityFromNativeToggle() {
-        var toggleText = getFilterToggleText();
-        var hidden = toggleText === "show filters";
+        var hidden = areFiltersCollapsed();
 
         $(document.body).toggleClass("dig-filters-hidden", hidden);
         $("#dig_scope_toolbar").toggleClass("dig-scope-collapsed", hidden);
+        $(".dashboard-form-globalfieldset, .fieldset").first().toggleClass("dig-fieldset-collapsed", hidden);
 
         normaliseFilterToggleLabel(hidden);
         updateScopeSummary(readCurrentScope());
     }
 
     function installFilterVisibilitySync() {
-        $(document).on("click", "a, button", function() {
+        $(document).on("click", ".hide-global-filters, .show-global-filters, a, button", function() {
+            var text = $.trim($(this).text() || "").toLowerCase();
+            var isFilterToggle = $(this).is(".hide-global-filters, .show-global-filters") ||
+                text === "hide filters" ||
+                text === "show filters";
+            if (!isFilterToggle) {
+                return;
+            }
             window.setTimeout(applyFilterVisibilityFromNativeToggle, 50);
             window.setTimeout(applyFilterVisibilityFromNativeToggle, 250);
             window.setTimeout(applyFilterVisibilityFromNativeToggle, 750);
         });
 
-        window.setInterval(applyFilterVisibilityFromNativeToggle, 1000);
-
-        try {
-            var observer = new MutationObserver(function() {
-                window.setTimeout(applyFilterVisibilityFromNativeToggle, 25);
-            });
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                characterData: true
-            });
-        } catch (e) {}
+        // Light poll only — avoid aggressive MutationObserver label fights with Splunk UI.
+        window.setInterval(applyFilterVisibilityFromNativeToggle, 2000);
     }
 
     try {

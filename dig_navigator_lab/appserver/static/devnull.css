@@ -404,3 +404,18 @@ body.dig-filters-hidden #dig_scope_toolbar {
     margin: 4px 0 10px 0;
     padding: 8px 10px;
 }
+
+/* Collapse empty fieldset chrome; keep Show Filters + scope summary readable */
+body.dig-filters-hidden .dashboard-form-globalfieldset.dig-fieldset-collapsed,
+body.dig-filters-hidden .dashboard-form-globalfieldset {
+    min-height: 0 !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    margin-bottom: 4px !important;
+}
+
+body.dig-filters-hidden .show-global-filters,
+body.dig-filters-hidden a.show-global-filters {
+    display: inline-block !important;
+    margin: 4px 0 8px 0;
+}
