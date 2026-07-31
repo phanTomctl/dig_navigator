@@ -274,6 +274,14 @@ body,
     gap: 6px;
 }
 
+.dig-scope-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 .dig-scope-actions {
     display: flex;
     flex-wrap: wrap;
@@ -283,6 +291,11 @@ body,
 
 .dig-scope-toolbar .btn {
     margin-right: 0;
+}
+
+.dig-scope-toolbar .dig-filter-toggle {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .dig-scope-status {
@@ -307,6 +320,8 @@ body,
     color: #ffffff;
     opacity: 0.92;
     word-break: break-word;
+    flex: 1 1 auto;
+    min-width: 200px;
 }
 
 .dig-scope-collapsed .dig-scope-actions,
@@ -317,6 +332,14 @@ body,
 .dig-scope-collapsed {
     margin-top: 4px;
     margin-bottom: 10px;
+}
+
+/* Hide Splunk's native Hide/Show Filters — DIG owns this in the toolbar */
+.hide-global-filters,
+.show-global-filters,
+a.hide-global-filters,
+a.show-global-filters {
+    display: none !important;
 }
 
 /* Analysis Scope should be full-width, but the Sample Limit text box should not. */
@@ -414,8 +437,11 @@ body.dig-filters-hidden .dashboard-form-globalfieldset {
     margin-bottom: 4px !important;
 }
 
-body.dig-filters-hidden .show-global-filters,
-body.dig-filters-hidden a.show-global-filters {
+/* Keep DIG Show Filters visible when inputs are collapsed */
+body.dig-filters-hidden #dig_scope_toolbar .dig-scope-summary-row {
+    display: flex !important;
+}
+
+body.dig-filters-hidden #dig_toggle_filters {
     display: inline-block !important;
-    margin: 4px 0 8px 0;
 }
