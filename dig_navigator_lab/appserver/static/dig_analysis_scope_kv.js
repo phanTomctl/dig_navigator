@@ -15,9 +15,9 @@
  *   carries a specific non-wildcard value (not dashboard-local filters).
  * - Scope is applied to default and submitted token models, then searches are
  *   restarted defensively for direct dashboard opens.
- * - Hide/Show Filters sync uses Splunk's .hide-global-filters /
- *   .show-global-filters classes (text fallback) so the control label stays correct
- *   when DIG collapses fieldset inputs via body.dig-filters-hidden.
+ * - Hide/Show Filters uses click-driven DIG state (body.dig-filters-hidden) and
+ *   relabels the native control to Show/Hide Filters without fighting Splunk classes.
+ * - Drilldown URL scope wins over KV on landing; reapply timers use URL scope, not KV.
  */
 require([
     "jquery",
@@ -130,22 +130,54 @@ require([
         return value === "" || value === "*";
     }
 
+    var scopeReapplyTimers = [];
+    var filtersCollapsed = false;
+
+    function clearScopeReapply() {
+        scopeReapplyTimers.forEach(function(timerId) {
+            window.clearTimeout(timerId);
+        });
+        scopeReapplyTimers = [];
+    }
+
+    function scheduleScopeReapply(scope, attemptsRemaining) {
+        clearScopeReapply();
+        if (!attemptsRemaining || attemptsRemaining < 1) {
+            return;
+        }
+
+        function tick(remaining) {
+            if (remaining < 1) {
+                return;
+            }
+            var timerId = window.setTimeout(function() {
+                var current = readCurrentScope();
+                if (!scopesEqual(current, scope)) {
+                    setScopeTokens(scope);
+                }
+                tick(remaining - 1);
+            }, 500);
+            scopeReapplyTimers.push(timerId);
+        }
+
+        tick(attemptsRemaining);
+    }
+
     function hasMeaningfulDrilldownContext(params) {
-        // Center dashboards persist wildcard defaults such as selected_group=* in
-        // the URL. Only treat the page as a drilldown when a context token carries
-        // a specific value that should override the saved Analysis Scope.
-        // DIG IN center drilldown tokens only. Do not include filters that also
-        // exist on top-level dashboards (framework_filter, datamodel_filter).
+        // Treat as drilldown when a context token carries a specific non-wildcard
+        // value that should override the saved Analysis Scope.
         var markerGroups = [
             ["form.selected_group", "selected_group"],
             ["form.classification", "classification"],
             ["form.selected_delay_category", "selected_delay_category"],
             ["form.selected_timestamp_indicator", "selected_timestamp_indicator"],
+            ["form.datamodel_filter", "datamodel_filter"],
             ["form.capability_filter", "capability_filter"],
             ["form.coverage_filter", "coverage_filter"],
             ["form.governance_relevance_filter", "governance_relevance_filter"],
             ["form.tier_filter", "tier_filter"],
-            ["form.retention_filter", "retention_filter"]
+            ["form.retention_filter", "retention_filter"],
+            ["form.framework_filter", "framework_filter"]
         ];
 
         for (var i = 0; i < markerGroups.length; i++) {
@@ -313,20 +345,6 @@ require([
         refreshSearches();
     }
 
-    function scheduleScopeReapply(scope, attemptsRemaining) {
-        if (!attemptsRemaining || attemptsRemaining < 1) {
-            return;
-        }
-
-        window.setTimeout(function() {
-            var current = readCurrentScope();
-            if (!scopesEqual(current, scope)) {
-                setScopeTokens(scope);
-            }
-            scheduleScopeReapply(scope, attemptsRemaining - 1);
-        }, 500);
-    }
-
     function updateVisibleInputs(scope) {
         getInputComponents().forEach(function(item) {
             try {
@@ -443,11 +461,20 @@ require([
             cache: false,
             success: function(scope) {
                 scope = normaliseScope(scope);
-                setScopeTokens(scope);
-                scheduleScopeReapply(scope, 4);
-                if (!skipDrilldownOverlay && applyDrilldownScopeFromUrl()) {
+                var urlScope = (!skipDrilldownOverlay) ? getUrlScopeIfMeaningful() : null;
+
+                // Prefer drilldown URL scope and re-apply THAT (not KV), so saved
+                // scope cannot race and overwrite a temporary refined search.
+                if (urlScope) {
+                    clearScopeReapply();
+                    setScopeTokens(urlScope);
+                    scheduleScopeReapply(urlScope, 4);
+                    updateStatus("Using drilldown scope. Click Apply Scope to save it.", false);
                     return;
                 }
+
+                setScopeTokens(scope);
+                scheduleScopeReapply(scope, 4);
                 if (scope && scope.is_default) {
                     updateStatus("Default safe scope loaded. Set a valid Analysis Scope and click Apply Scope.", false);
                 } else {
@@ -497,7 +524,6 @@ require([
             return hide;
         }
 
-        // Fallback for builds that only expose link text.
         var found = $();
         $("a, button").each(function() {
             var t = $.trim($(this).text() || "").toLowerCase();
@@ -509,67 +535,65 @@ require([
         return found;
     }
 
-    function areFiltersCollapsed() {
-        if ($(".show-global-filters").length) {
-            return true;
-        }
-        if ($(".hide-global-filters").length) {
+    function isFilterToggleTarget(el) {
+        var $el = $(el).closest("a, button, span, div");
+        if (!$el.length) {
             return false;
         }
+        if ($el.is(".hide-global-filters, .show-global-filters") ||
+            $el.closest(".hide-global-filters, .show-global-filters").length) {
+            return true;
+        }
+        var text = $.trim($el.text() || "").toLowerCase();
+        return text === "hide filters" || text === "show filters";
+    }
 
+    function applyFiltersCollapsedState() {
+        $(document.body).toggleClass("dig-filters-hidden", filtersCollapsed);
+        $("#dig_scope_toolbar").toggleClass("dig-scope-collapsed", filtersCollapsed);
+        $(".dashboard-form-globalfieldset, .fieldset").first().toggleClass("dig-fieldset-collapsed", filtersCollapsed);
+
+        // Relabel whatever control Splunk currently exposes — do not mutate its classes.
         var toggle = getFilterToggleElement();
         if (toggle.length) {
-            var text = $.trim(toggle.text() || "").toLowerCase();
-            if (text === "show filters") {
-                return true;
-            }
-            if (text === "hide filters") {
-                return false;
-            }
+            toggle.text(filtersCollapsed ? "Show Filters" : "Hide Filters");
+            toggle.attr("aria-expanded", filtersCollapsed ? "false" : "true");
         }
 
-        return isFieldsetHidden();
-    }
-
-    function normaliseFilterToggleLabel(hidden) {
-        var toggle = getFilterToggleElement();
-        if (!toggle.length) {
-            return;
-        }
-
-        toggle.text(hidden ? "Show Filters" : "Hide Filters");
-        toggle.attr("aria-expanded", hidden ? "false" : "true");
-        toggle.toggleClass("show-global-filters", !!hidden);
-        toggle.toggleClass("hide-global-filters", !hidden);
-    }
-
-    function applyFilterVisibilityFromNativeToggle() {
-        var hidden = areFiltersCollapsed();
-
-        $(document.body).toggleClass("dig-filters-hidden", hidden);
-        $("#dig_scope_toolbar").toggleClass("dig-scope-collapsed", hidden);
-        $(".dashboard-form-globalfieldset, .fieldset").first().toggleClass("dig-fieldset-collapsed", hidden);
-
-        normaliseFilterToggleLabel(hidden);
         updateScopeSummary(readCurrentScope());
     }
 
+    function setFiltersCollapsed(hidden) {
+        filtersCollapsed = !!hidden;
+        applyFiltersCollapsedState();
+        // Splunk may replace the link node shortly after click; re-assert label.
+        window.setTimeout(applyFiltersCollapsedState, 50);
+        window.setTimeout(applyFiltersCollapsedState, 250);
+        window.setTimeout(applyFiltersCollapsedState, 750);
+    }
+
     function installFilterVisibilitySync() {
-        $(document).on("click", ".hide-global-filters, .show-global-filters, a, button", function() {
-            var text = $.trim($(this).text() || "").toLowerCase();
-            var isFilterToggle = $(this).is(".hide-global-filters, .show-global-filters") ||
-                text === "hide filters" ||
-                text === "show filters";
-            if (!isFilterToggle) {
+        $(document).on("click", function(e) {
+            if (!isFilterToggleTarget(e.target)) {
                 return;
             }
-            window.setTimeout(applyFilterVisibilityFromNativeToggle, 50);
-            window.setTimeout(applyFilterVisibilityFromNativeToggle, 250);
-            window.setTimeout(applyFilterVisibilityFromNativeToggle, 750);
-        });
+            var $el = $(e.target).closest("a, button, span, div");
+            var text = $.trim($el.text() || "").toLowerCase();
+            var hiding = $el.is(".hide-global-filters") ||
+                $el.closest(".hide-global-filters").length > 0 ||
+                text === "hide filters";
+            var showing = $el.is(".show-global-filters") ||
+                $el.closest(".show-global-filters").length > 0 ||
+                text === "show filters";
 
-        // Light poll only — avoid aggressive MutationObserver label fights with Splunk UI.
-        window.setInterval(applyFilterVisibilityFromNativeToggle, 2000);
+            if (hiding && !showing) {
+                setFiltersCollapsed(true);
+            } else if (showing) {
+                setFiltersCollapsed(false);
+            } else {
+                setFiltersCollapsed(!filtersCollapsed);
+            }
+        });
     }
 
     try {
@@ -578,7 +602,7 @@ require([
         updateScopeSummary(readCurrentScope());
         updateCollapsedState();
         installFilterVisibilitySync();
-        applyFilterVisibilityFromNativeToggle();
+        applyFiltersCollapsedState();
 
         $(document).on("click", "#dig_apply_scope", function(e) {
             e.preventDefault();
@@ -587,11 +611,13 @@ require([
 
         $(document).on("click", "#dig_load_scope", function(e) {
             e.preventDefault();
+            clearScopeReapply();
             loadScope(true, true);
         });
 
         $(document).on("click", "#dig_reset_scope", function(e) {
             e.preventDefault();
+            clearScopeReapply();
             saveScope("reset");
         });
 
@@ -609,7 +635,7 @@ require([
         window.setTimeout(function() {
             markScopeInputs();
             updateCollapsedState();
-            applyFilterVisibilityFromNativeToggle();
+            applyFiltersCollapsedState();
             loadScope(true, false);
         }, 250);
     } catch (e) {
