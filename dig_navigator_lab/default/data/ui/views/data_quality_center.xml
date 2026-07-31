@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_kv.js,dig_quality_dimensions_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
+<dashboard script="dig_analysis_scope_v2.js,dig_quality_dimensions_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
   <label>Data Quality IN</label>
 
   <fieldset submitButton="false" autoRun="false">

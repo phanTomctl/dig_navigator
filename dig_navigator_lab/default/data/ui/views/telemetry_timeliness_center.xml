@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_kv.js,dig_delivery_summary_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
+<dashboard script="dig_analysis_scope_v2.js,dig_delivery_summary_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
   <label>Telemetry Delivery IN</label>
 
   <fieldset submitButton="false" autoRun="false">
