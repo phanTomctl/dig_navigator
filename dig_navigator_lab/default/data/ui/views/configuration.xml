@@ -78,7 +78,7 @@
         <search>
           <query><![CDATA[
 | inputlookup governance_datamodel_mapping_lookup
-| table framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence review_status updated_at
+| table framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence updated_at
 | sort framework datamodel requirement_area
           ]]></query>
         </search>

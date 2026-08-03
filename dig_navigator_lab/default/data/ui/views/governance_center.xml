@@ -174,7 +174,7 @@ $base_search$
     | eval selected_dm_wrapped="|" . selected_dm . "|"
     | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
     | eval mapping_row=1
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes mapping_row
+    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url notes mapping_row
 ]
 | eventstats max(datamodel_observed) as datamodel_observed max(matched_fields) as matched_fields max(field_instances) as field_instances values(matched_field_names) as matched_field_names values(groups) as groups by datamodel
 | where mapping_row=1
@@ -184,7 +184,7 @@ $base_search$
 | where selected_coverage="*" OR coverage_state=selected_coverage
 | eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
 | eval covered_weight=if(datamodel_observed=1,mapping_weight,0)
-| fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes datamodel_observed coverage_state mapping_weight covered_weight matched_fields field_instances matched_field_names groups
+| fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url notes datamodel_observed coverage_state mapping_weight covered_weight matched_fields field_instances matched_field_names groups
     ]]></query>
   </search>
 
@@ -284,14 +284,14 @@ $base_search$
     | eval selected_capability=if(len("$capability_filter$")=0,"*","$capability_filter$")
     | eval selected_capability_wrapped="|" . selected_capability . "|"
     | where selected_capability="*" OR like(selected_capability_wrapped,"%|*|%") OR like(selected_capability_wrapped,"%|" . capability . "|%")
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes
+    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url notes
 ]
 | eval governance_mapped=if(isnotnull(framework),1,0)
 | eval coverage_state=if(governance_mapped=1,"Covered","Unmapped")
 | where "$coverage_filter$"="*" OR ("$coverage_filter$"="Covered" AND governance_mapped=1) OR ("$coverage_filter$"="Missing" AND governance_mapped=0)
 | where "$governance_relevance_filter$"="*" OR governance_relevance="$governance_relevance_filter$"
 | eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
-| fields group_value field_name field_instances datamodel framework framework_version control_reference requirement_area capability governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes governance_mapped coverage_state mapping_weight
+| fields group_value field_name field_instances datamodel framework framework_version control_reference requirement_area capability governance_relevance mapping_confidence source_terms mapping_rationale source_url notes governance_mapped coverage_state mapping_weight
     ]]></query>
   </search>
   <row>

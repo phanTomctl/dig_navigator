@@ -492,7 +492,7 @@ $base_search$
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
     | eval selected_framework_wrapped="|" . selected_framework . "|"
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence mapping_rationale source_terms source_url review_status notes
+    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence mapping_rationale source_terms source_url notes
 ]
 | stats
     dc(field_name) as matched_dm_fields
@@ -503,11 +503,10 @@ $base_search$
     values(source_terms) as source_terms
     values(mapping_rationale) as mapping_rationale
     values(source_url) as source_url
-    values(review_status) as review_status
     values(notes) as notes
     by group_value framework framework_version datamodel
-| rename group_value as grouping framework as Framework framework_version as Version datamodel as Datamodel matched_dm_fields as "Matched DM Fields" requirement_areas as "Requirement Areas" capabilities as Capabilities governance_relevance as Relevance mapping_confidence as Confidence source_terms as "Source Terms" mapping_rationale as Rationale source_url as "Source URL" review_status as "Review Status"
-| table grouping Framework Version Datamodel "Requirement Areas" Capabilities Relevance Confidence "Matched DM Fields" "Source Terms" Rationale "Source URL" "Review Status" notes
+| rename group_value as grouping framework as Framework framework_version as Version datamodel as Datamodel matched_dm_fields as "Matched DM Fields" requirement_areas as "Requirement Areas" capabilities as Capabilities governance_relevance as Relevance mapping_confidence as Confidence source_terms as "Source Terms" mapping_rationale as Rationale source_url as "Source URL"
+| table grouping Framework Version Datamodel "Requirement Areas" Capabilities Relevance Confidence "Matched DM Fields" "Source Terms" Rationale "Source URL" notes
 | sort grouping Framework Datamodel
           ]]></query>
         </search>
