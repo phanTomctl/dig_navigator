@@ -132,12 +132,13 @@ $base_search$
 
     <input type="text" token="sample_limit">
       <label>Sample event limit</label>
-      <default>5000</default>
+      <default>1000</default>
     </input>
 
   </fieldset>
 
-  <search id="base_governance_center">
+  <!-- Shared sample → field inventory → CIM join (one index scan for center + source evidence). -->
+  <search id="base_governance_field_evidence">
     <query><![CDATA[
 $base_search$
 | head $sample_limit$
@@ -163,6 +164,14 @@ $base_search$
     | eval field_name=lower(field_name)
     | fields datamodel field_name
 ]
+| fields group_value field_name field_instances datamodel
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_governance_center" base="base_governance_field_evidence">
+    <query><![CDATA[
 | stats
     sum(field_instances) as field_instances
     dc(field_name) as matched_fields
@@ -195,37 +204,10 @@ $base_search$
 | eval covered_weight=if(datamodel_observed=1,mapping_weight,0)
 | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation source_terms mapping_rationale source_url mapping_method review_status notes datamodel_observed coverage_state mapping_weight covered_weight matched_fields field_instances matched_field_names groups
     ]]></query>
-    <earliest>$time_range.earliest$</earliest>
-    <latest>$time_range.latest$</latest>
   </search>
 
-
-  <search id="base_governance_source_evidence">
+  <search id="base_governance_source_evidence" base="base_governance_field_evidence">
     <query><![CDATA[
-$base_search$
-| head $sample_limit$
-| eval group_value=if("$group_by$"="source", source, sourcetype)
-| eval group_value=coalesce(group_value,"unknown")
-| eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
-| eval selected_group_wrapped="|" . selected_group . "|"
-| where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
-| fields group_value *
-| fields - _raw _time _indextime _cd _serial linecount punct splunk_server splunk_server_group
-| untable group_value field_name field_value
-| where isnotnull(field_value)
-| eval field_name=lower(field_name)
-| where NOT match(field_name,"^_")
-| where field_name!="group_value"
-| stats count as field_instances by group_value field_name
-| join type=inner max=0 field_name [
-    | inputlookup datamodel_fields_lookup
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | eval datamodel=replace(datamodel," ","_")
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval field_name=lower(field_name)
-    | fields datamodel field_name
-]
 | eval datamodel_observed=1
 | join type=left max=0 datamodel [
     | inputlookup governance_datamodel_mapping_lookup
@@ -246,8 +228,6 @@ $base_search$
 | eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
 | fields group_value field_name field_instances datamodel framework framework_version control_reference requirement_area capability governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation source_terms mapping_rationale source_url mapping_method review_status notes governance_mapped coverage_state mapping_weight
     ]]></query>
-    <earliest>$time_range.earliest$</earliest>
-    <latest>$time_range.latest$</latest>
   </search>
   <row>
     <panel>
