@@ -134,7 +134,7 @@ $base_search$
     ]]></query>
   </search>
 
-  <!-- High-relevance primary control scores (Ticket_Management excluded until catalog/mapping is ready). -->
+  <!-- High-relevance primary control scores . -->
   <search id="base_governance_primary_controls" base="base_governance_recommended_dm">
     <query><![CDATA[
 | fields datamodel dm_coverage_pct observed_recommended total_recommended
@@ -209,8 +209,8 @@ $base_search$
             <summary>Why this matters</summary>
             <div class="context-panel">
               <p><strong>What this shows:</strong> High-relevance (primary) controls per framework, stacked by how complete the mapped datamodel’s recommended CIM fields are in the selected sample.</p>
-              <p><strong>Why it matters:</strong> Most controls point at a primary datamodel (for example Authentication). Recommended fields are the minimum set that datamodel expects to be useful — so this is a practical “do we have the right shape of evidence?” view.</p>
-              <p><strong>Read it as:</strong> Good = ≥70% of recommended fields present; Partial = some; None = none. Potential evidence gaps only — not compliance. Ticket_Management mappings are excluded for now. Open Governance IN for average completeness % and control detail.</p>
+              <p><strong>Why it matters:</strong> Most controls point at a primary datamodel (for example Authentication). Recommended fields are the minimum set that datamodel expects to be useful.</p>
+              <p><strong>Read it as:</strong> Good = ≥70% of recommended fields present; Partial = some; None = none. Potential evidence gaps only — not compliance. Open Governance IN for average completeness % and control detail.</p>
             </div>
           </details>
         </div>
