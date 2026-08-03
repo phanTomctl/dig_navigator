@@ -48,6 +48,13 @@ $base_search$
       <default>1000</default>
     </input>
 
+    <input type="dropdown" token="field_scope" searchWhenChanged="true">
+      <label>Field scope</label>
+      <choice value="recommended">Recommended fields</choice>
+      <choice value="all">All datamodel fields</choice>
+      <default>recommended</default>
+    </input>
+
   </fieldset>
 
   <!-- Same sample base as Data Intelligence so CIM Alignment uses identical fielddiscovery (fieldsummary). -->
@@ -66,9 +73,58 @@ $base_search$
     <latest>$time_range.latest$</latest>
   </search>
 
+  <!-- Same structure/consistency model as Data Intelligence (shape schemas, not digit-only fallback). -->
+  <search id="base_structure" base="base_sample">
+    <query><![CDATA[
+| eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
+| eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
+| eval json_payload=if(is_json=1,_raw,null())
+| spath input=json_payload
+| eval schema_fields=null()
+| foreach * [
+    eval schema_fields=if(
+        is_json=1
+        AND isnotnull('<<FIELD>>')
+        AND NOT match("<<FIELD>>","^_")
+        AND NOT match("<<FIELD>>","^(index|source|sourcetype|host|splunk_server|splunk_server_group|linecount|punct|tag|eventtype|group_value|is_json|is_xml|schema_fields)$"),
+        mvappend(schema_fields, lower("<<FIELD>>")),
+        schema_fields
+    )
+]
+| eval json_schema=if(is_json=1,mvjoin(mvsort(mvdedup(schema_fields)),"|"),null())
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_pairs>[A-Za-z0-9][A-Za-z0-9_]{0,100}\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s]+))"
+| rex max_match=0 field=_raw "(?:^|\s)(?<kv_keys>[A-Za-z0-9][A-Za-z0-9_]{0,100})\s*="
+| eval kv_count=mvcount(kv_pairs)
+| eval is_kv=if(kv_count>=3,1,0)
+| rex max_match=0 field=_raw "<\/?(?<xml_tags>[A-Za-z_][A-Za-z0-9_.:-]*)[\s>/]"
+| eval is_common_log=if(match(_raw,"^\S+\s+\S+\s+\S+\s+\[[^\]]+\]\s+\"[^\"]*\"\s+\d{3}\s+\S+"),1,0)
+| eval has_delimiter=if(match(_raw,"[,|;\t]") OR is_common_log=1,1,0)
+| eval is_delimited=if(is_json=0 AND is_xml=0 AND is_kv=0 AND has_delimiter=1,1,0)
+| eval delimiter_type=case(is_common_log=1,"common_log",match(_raw,"\|"),"pipe",match(_raw,","),"comma",match(_raw,";"),"semicolon",match(_raw,"\t"),"tab",true(),"none")
+| eval delimiter_field_count=case(delimiter_type="pipe",mvcount(split(_raw,"|")),delimiter_type="comma",mvcount(split(_raw,",")),delimiter_type="semicolon",mvcount(split(_raw,";")),delimiter_type="tab",mvcount(split(_raw,"\t")),delimiter_type="common_log",9,true(),0)
+| eval raw_len=len(_raw)
+| eval fallback_shape=replace(_raw,"\b\d{1,3}(\.\d{1,3}){3}\b","IP")
+| eval fallback_shape=replace(fallback_shape,"\b([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]*\b","IP")
+| eval fallback_shape=replace(fallback_shape,"[A-Fa-f0-9]{8,}","HEX")
+| eval fallback_shape=replace(fallback_shape,"\d+","N")
+| eval fallback_shape=trim(replace(fallback_shape,"\s+"," "))
+| eval raw_shape=case(is_json=1 AND isnotnull(json_schema) AND len(json_schema)>0,"json_schema:" . json_schema,is_xml=1 AND mvcount(xml_tags)>0,"xml_schema:" . mvjoin(mvsort(mvdedup(xml_tags)),"|"),is_kv=1 AND mvcount(kv_keys)>0,"kv_keys:" . mvjoin(mvsort(mvdedup(kv_keys)),"|"),is_delimited=1,"delimited:" . delimiter_type . ":fields=" . delimiter_field_count,true(),"freeform_shape:" . fallback_shape)
+| eval structure_hint=if(is_json=1 OR is_xml=1 OR is_kv=1 OR is_delimited=1,1,0)
+| stats
+    count as event_count
+    avg(structure_hint) as structure_ratio
+    dc(raw_shape) as distinct_shapes
+    avg(raw_len) as avg_raw_len
+    stdev(raw_len) as stdev_raw_len
+    by group_value
+| eval shape_ratio=if(event_count>0,round(distinct_shapes/event_count,4),0)
+| eval length_variance=if(avg_raw_len>0,round(stdev_raw_len/avg_raw_len,4),0)
+| fields group_value event_count structure_ratio shape_ratio length_variance
+    ]]></query>
+  </search>
+
   <search id="base_quality_field_evidence" base="base_sample">
     <query><![CDATA[
-
 | eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
 | eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
 | rex max_match=0 field=_raw "(?:^|\s)(?<kv_pairs>[A-Za-z0-9][A-Za-z0-9_]{0,100}\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s]+))"
@@ -165,7 +221,11 @@ $base_search$
     | eval field_name=lower(trim(field_name))
     | eval recommended=if(recommended="true" OR recommended=1,1,0)
     | eval required=if(required="true" OR required=1,1,0)
-    | eval model_field=if(recommended=1 OR required=1,1,0)
+    | eval model_field=case(
+        "$field_scope$"="all",1,
+        recommended=1 OR required=1,1,
+        true(),0
+      )
     | stats values(datamodel) as datamodels max(model_field) as model_field by field_name
 ]
 
@@ -177,40 +237,71 @@ $base_search$
     <latest>$time_range.latest$</latest>
   </search>
 
-  <search id="tile_quality_core" base="base_quality_field_evidence">
+  <!-- Same Structure/Consistency scoring as Data Intelligence. -->
+  <search id="tile_structure_consistency" base="base_structure">
     <query><![CDATA[
-| eval is_meta_field=if(match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|tag|group_value|datamodels|in_datamodel|model_field|structure_score|consistency_score|distinct_shapes|shape_ratio|length_variance|duplicate_pct|host_ratio|source_ratio|cardinality_score|cardinality_pressure|event_count|field_instances|observed_tags)$"),1,0)
-| eval fill_pct=if(is_meta_field=0 AND event_count>0,round(100*field_instances/event_count,1),null())
-| stats
-    max(structure_score) as structure_score
-    max(consistency_score) as consistency_score
-    max(duplicate_pct) as duplicate_pct
-    max(cardinality_score) as cardinality_score
-    max(cardinality_pressure) as cardinality_pressure
-    avg(fill_pct) as avg_fill_pct
-    max(event_count) as event_count
-    by group_value
-| stats
-    avg(structure_score) as Structure
-    avg(consistency_score) as Consistency
-    avg(avg_fill_pct) as parsing_quality_pct
-    avg(cardinality_score) as cardinality_score
-    avg(cardinality_pressure) as cardinality_pressure
-    avg(duplicate_pct) as duplicate_pct
-    sum(event_count) as events_sampled
-| eval Structure=round(Structure,0)
-| eval Consistency=round(Consistency,0)
-| eval parsing_quality_pct=round(coalesce(parsing_quality_pct,0),0)
-| eval cardinality_score=round(coalesce(cardinality_score,0),0)
-| eval cardinality_pressure_pct=round(coalesce(cardinality_pressure,0)*100,1)
-| eval duplicate_pct=round(coalesce(duplicate_pct,0),1)
-| fields Structure Consistency parsing_quality_pct cardinality_score cardinality_pressure_pct duplicate_pct events_sampled
+| eval structure_score=round(structure_ratio*100,0)
+| eval consistency_score=round(max(0,min(100,100-(shape_ratio*100)-(length_variance*25))),0)
+| stats avg(structure_score) as Structure avg(consistency_score) as Consistency
+| eval Structure=round(Structure,0), Consistency=round(Consistency,0)
+| fields Structure Consistency
     ]]></query>
   </search>
 
-  <!-- Identical CIM Alignment math as Data Intelligence tile_cim_alignment
-       (fieldsummary + recommended/required scope). Quality IN has no Field scope /
-       Datamodel filter inputs, so those are fixed to recommended + all models. -->
+  <!-- Same Parsing / Cardinality / Duplication feeders as Data Intelligence Snapshot. -->
+  <search id="tile_parsing_quality" base="base_sample">
+    <query><![CDATA[
+| fieldsummary maxvals=1
+| rename field as field_name
+| eval field_name=lower(trim(field_name))
+| eval is_meta_field=if(match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint|group_value|tag)$") OR match(field_name,"^_"),1,0)
+| eventstats max(eval(if(match(field_name,"^(host|sourcetype|source)$"),count,null()))) as total_events
+| where is_meta_field=0
+| eval fill_pct=if(total_events>0,round(100*count/total_events,1),null())
+| stats avg(fill_pct) as parsing_quality_pct
+| eval parsing_quality_pct=round(coalesce(parsing_quality_pct,0),0)
+| fields parsing_quality_pct
+    ]]></query>
+  </search>
+  <search id="tile_cardinality_duplication" base="base_sample">
+    <query><![CDATA[
+| eval raw_hash=md5(_raw)
+| eval raw_len=len(_raw)
+| eval raw_shape=replace(_raw,"\b\d{1,3}(\.\d{1,3}){3}\b","IP")
+| eval raw_shape=replace(raw_shape,"\b([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]*\b","IP")
+| eval raw_shape=replace(raw_shape,"[A-Fa-f0-9]{8,}","HEX")
+| eval raw_shape=replace(raw_shape,"\d+","N")
+| eval raw_shape=trim(replace(raw_shape,"\s+"," "))
+| eventstats
+    count as event_count
+    dc(raw_hash) as unique_raws
+    dc(host) as distinct_hosts
+    dc(source) as distinct_sources
+    dc(raw_shape) as distinct_shapes
+    by group_value
+| eval shape_ratio=if(event_count>0,round(distinct_shapes/event_count,4),0)
+| eval host_ratio=if(event_count>0,round(distinct_hosts/event_count,4),0)
+| eval source_ratio=if(event_count>0,round(distinct_sources/event_count,4),0)
+| eval cardinality_pressure=max(shape_ratio, host_ratio, source_ratio)
+| eval cardinality_score=round(max(0,min(100,100-(cardinality_pressure*100))),0)
+| eval duplicate_pct=round(if(event_count>0,(1-(unique_raws/event_count))*100,0),1)
+| stats
+    max(cardinality_score) as cardinality_score
+    max(cardinality_pressure) as cardinality_pressure
+    max(duplicate_pct) as duplicate_pct
+    by group_value
+| stats
+    avg(cardinality_score) as cardinality_score
+    avg(cardinality_pressure) as cardinality_pressure
+    avg(duplicate_pct) as duplicate_pct
+| eval cardinality_score=round(coalesce(cardinality_score,0),0)
+| eval cardinality_pressure_pct=round(coalesce(cardinality_pressure,0)*100,1)
+| eval duplicate_pct=round(coalesce(duplicate_pct,0),1)
+| fields cardinality_score cardinality_pressure_pct duplicate_pct
+    ]]></query>
+  </search>
+
+  <!-- Identical CIM Alignment math as Data Intelligence tile_cim_alignment (honours Field scope). -->
   <search id="tile_quality_cim" base="base_sample">
     <query><![CDATA[
 | fieldsummary maxvals=1
@@ -226,7 +317,11 @@ $base_search$
     | eval field_name=lower(trim(field_name))
     | eval recommended=if(recommended="true" OR recommended=1,1,0)
     | eval required=if(required="true" OR required=1,1,0)
-    | eval scope_field=if(recommended=1 OR required=1,1,0)
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
     | where scope_field=1
     | eval from_lookup=1
     | fields field_name datamodel from_lookup
@@ -547,9 +642,9 @@ $base_search$
           <details>
             <summary>Why This Matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Per-source recommended-field coverage for datamodels that already have field evidence in the sample.</p>
+              <p><strong>What this shows:</strong> Per-source Field-scope coverage for datamodels that already have field evidence in the sample.</p>
               <p><strong>How to use it:</strong> Use this for a quick CIM breakdown on Quality IN. For tags, missing fields and perspective detail, use Data Readiness IN.</p>
-              <p><strong>Read it as:</strong> Same CIM story as the Dimensions tile (recommended-scope coverage for matched models).</p>
+              <p><strong>Read it as:</strong> Same CIM story as the Dimensions tile (honours the Field scope control).</p>
             </div>
           </details>
         </div>
@@ -572,7 +667,12 @@ $base_search$
     | eval field_name=lower(trim(field_name))
     | eval recommended=if(recommended="true" OR recommended=1,1,0)
     | eval required=if(required="true" OR required=1,1,0)
-    | where recommended=1 OR required=1
+    | eval scope_field=case(
+        "$field_scope$"="all",1,
+        "$field_scope$"="recommended" AND (recommended=1 OR required=1),1,
+        true(),0
+      )
+    | where scope_field=1
     | stats dc(field_name) as total_scope_fields by datamodel
 ]
 | eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)

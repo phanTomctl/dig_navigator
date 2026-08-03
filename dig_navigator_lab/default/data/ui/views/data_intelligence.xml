@@ -254,8 +254,7 @@ $base_search$
     ]]></query>
   </search>
 
-  <!-- Shared snapshot tile feeders (UI: dig_snapshot_tiles.js / dig_snapshot_tiles.css).
-       Copy these four <search id="tile_*"> blocks when adding the strip to another dashboard. -->
+  <!-- Shared snapshot tile feeders (UI: dig_snapshot_tiles.js / dig_snapshot_tiles.css). -->
   <search id="tile_structure_consistency" base="base_structure">
     <query><![CDATA[
 | eval structure_score=round(structure_ratio*100,0)
@@ -314,6 +313,57 @@ $base_search$
 | eval models_with_evidence=coalesce(models_with_evidence,0)
 | eval cim_alignment_pct=round(if(total_scope_fields>0,(matched_scope_fields/total_scope_fields)*100,0),0)
 | fields cim_alignment_pct matched_scope_fields total_scope_fields any_dm_match models_with_evidence
+    ]]></query>
+  </search>
+  <search id="tile_parsing_quality" base="base_sample">
+    <query><![CDATA[
+| fieldsummary maxvals=1
+| rename field as field_name
+| eval field_name=lower(trim(field_name))
+| eval is_meta_field=if(match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint|group_value|tag)$") OR match(field_name,"^_"),1,0)
+| eventstats max(eval(if(match(field_name,"^(host|sourcetype|source)$"),count,null()))) as total_events
+| where is_meta_field=0
+| eval fill_pct=if(total_events>0,round(100*count/total_events,1),null())
+| stats avg(fill_pct) as parsing_quality_pct
+| eval parsing_quality_pct=round(coalesce(parsing_quality_pct,0),0)
+| fields parsing_quality_pct
+    ]]></query>
+  </search>
+  <search id="tile_cardinality_duplication" base="base_sample">
+    <query><![CDATA[
+| eval raw_hash=md5(_raw)
+| eval raw_len=len(_raw)
+| eval raw_shape=replace(_raw,"\b\d{1,3}(\.\d{1,3}){3}\b","IP")
+| eval raw_shape=replace(raw_shape,"\b([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]*\b","IP")
+| eval raw_shape=replace(raw_shape,"[A-Fa-f0-9]{8,}","HEX")
+| eval raw_shape=replace(raw_shape,"\d+","N")
+| eval raw_shape=trim(replace(raw_shape,"\s+"," "))
+| eventstats
+    count as event_count
+    dc(raw_hash) as unique_raws
+    dc(host) as distinct_hosts
+    dc(source) as distinct_sources
+    dc(raw_shape) as distinct_shapes
+    by group_value
+| eval shape_ratio=if(event_count>0,round(distinct_shapes/event_count,4),0)
+| eval host_ratio=if(event_count>0,round(distinct_hosts/event_count,4),0)
+| eval source_ratio=if(event_count>0,round(distinct_sources/event_count,4),0)
+| eval cardinality_pressure=max(shape_ratio, host_ratio, source_ratio)
+| eval cardinality_score=round(max(0,min(100,100-(cardinality_pressure*100))),0)
+| eval duplicate_pct=round(if(event_count>0,(1-(unique_raws/event_count))*100,0),1)
+| stats
+    max(cardinality_score) as cardinality_score
+    max(cardinality_pressure) as cardinality_pressure
+    max(duplicate_pct) as duplicate_pct
+    by group_value
+| stats
+    avg(cardinality_score) as cardinality_score
+    avg(cardinality_pressure) as cardinality_pressure
+    avg(duplicate_pct) as duplicate_pct
+| eval cardinality_score=round(coalesce(cardinality_score,0),0)
+| eval cardinality_pressure_pct=round(coalesce(cardinality_pressure,0)*100,1)
+| eval duplicate_pct=round(coalesce(duplicate_pct,0),1)
+| fields cardinality_score cardinality_pressure_pct duplicate_pct
     ]]></query>
   </search>
   <search id="tile_delivery_lag" base="base_timeliness_evidence">

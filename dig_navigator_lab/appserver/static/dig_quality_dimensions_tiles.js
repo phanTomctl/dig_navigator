@@ -6,8 +6,10 @@
  * Wire-up:
  *   1. stylesheet includes dig_snapshot_tiles.css
  *   2. script includes dig_quality_dimensions_tiles.js
- *   3. Searches: tile_quality_core, tile_quality_cim
+ *   3. Searches: tile_structure_consistency, tile_parsing_quality,
+ *      tile_cardinality_duplication, tile_quality_cim
  *   4. Mount: <div id="dig-quality-dimensions-tiles"></div>
+ *   5. Token: field_scope (same meaning as Data Intelligence)
  */
 require([
     "jquery",
@@ -33,7 +35,11 @@ require([
     ];
 
     var state = {
-        core: null,
+        structure: null,
+        consistency: null,
+        parsing_quality: null,
+        cardinality: null,
+        duplication: null,
         cim: null
     };
 
@@ -165,11 +171,10 @@ require([
     }
 
     function buildTiles() {
-        var core = state.core;
         var cim = state.cim;
         var tiles = [];
 
-        var structureScore = fieldVal(core, ["Structure", "structure_score"]);
+        var structureScore = fieldVal(state.structure, ["Structure", "structure_score"]);
         tiles.push({
             id: "structure",
             label: "Structure",
@@ -178,7 +183,7 @@ require([
             band: bandFromScore(structureScore, THRESHOLDS.structure)
         });
 
-        var consistencyScore = fieldVal(core, ["Consistency", "consistency_score"]);
+        var consistencyScore = fieldVal(state.consistency, ["Consistency", "consistency_score"]);
         tiles.push({
             id: "consistency",
             label: "Consistency",
@@ -190,9 +195,9 @@ require([
         var cimPct = fieldVal(cim, ["cim_alignment_pct"]);
         var cimMatched = fieldVal(cim, ["matched_scope_fields"]);
         var cimTotal = fieldVal(cim, ["total_scope_fields"]);
-        var cimSub = "Recommended-field coverage for matched datamodels";
+        var cimSub = "Field-scope coverage for matched datamodels";
         if (cimMatched != null && cimTotal != null) {
-            cimSub = cimMatched + " / " + cimTotal + " recommended fields · matched models";
+            cimSub = cimMatched + " / " + cimTotal + " scope fields · matched models";
         }
         tiles.push({
             id: "cim_alignment",
@@ -202,7 +207,7 @@ require([
             band: bandCimAlignment(cim)
         });
 
-        var parsingScore = fieldVal(core, ["parsing_quality_pct"]);
+        var parsingScore = fieldVal(state.parsing_quality, ["parsing_quality_pct"]);
         tiles.push({
             id: "parsing_quality",
             label: "Parsing Quality",
@@ -211,8 +216,8 @@ require([
             band: bandFromScore(parsingScore, THRESHOLDS.parsing)
         });
 
-        var cardScore = fieldVal(core, ["cardinality_score"]);
-        var cardPressure = fieldVal(core, ["cardinality_pressure_pct"]);
+        var cardScore = fieldVal(state.cardinality, ["cardinality_score"]);
+        var cardPressure = fieldVal(state.cardinality, ["cardinality_pressure_pct"]);
         var cardSub = "Lower pressure from shapes / hosts / sources is better";
         if (cardPressure != null) {
             cardSub = "Pressure " + cardPressure + "% (shapes / hosts / sources)";
@@ -225,7 +230,7 @@ require([
             band: bandFromScore(cardScore, THRESHOLDS.cardinality)
         });
 
-        var dupPct = fieldVal(core, ["duplicate_pct"]);
+        var dupPct = fieldVal(state.duplication, ["duplicate_pct"]);
         tiles.push({
             id: "duplication",
             label: "Duplication",
@@ -245,8 +250,8 @@ require([
         var tiles = buildTiles();
         var html = '<div class="dig-snapshot-wrap">';
         html += '<div class="context-toggle"><details><summary>Why This Matters</summary><div class="context-panel">';
-        html += "<p><strong>Structure / Consistency:</strong> Parseability and event-shape stability in the sample.</p>";
-        html += "<p><strong>CIM Alignment:</strong> Recommended-field coverage for datamodels that already have field evidence (same story as Data Intelligence).</p>";
+        html += "<p><strong>Structure / Consistency:</strong> Same model as Data Intelligence (schema-aware shapes + length stability).</p>";
+        html += "<p><strong>CIM Alignment:</strong> Field-scope coverage for datamodels that already have field evidence (same story as Data Intelligence).</p>";
         html += "<p><strong>Parsing Quality:</strong> How completely extracted fields are populated across events (fill rate).</p>";
         html += "<p><strong>Cardinality:</strong> Pressure from distinct shapes, hosts, and sources relative to sample size.</p>";
         html += "<p><strong>Duplication:</strong> Repeated raw event payloads in the sample (collection or replay risk).</p>";
@@ -263,8 +268,16 @@ require([
         $root.html(html);
     }
 
-    bindSearch("tile_quality_core", function(row) {
-        state.core = row;
+    bindSearch("tile_structure_consistency", function(row) {
+        state.structure = row;
+        state.consistency = row;
+    });
+    bindSearch("tile_parsing_quality", function(row) {
+        state.parsing_quality = row;
+    });
+    bindSearch("tile_cardinality_duplication", function(row) {
+        state.cardinality = row;
+        state.duplication = row;
     });
     bindSearch("tile_quality_cim", function(row) {
         state.cim = row;

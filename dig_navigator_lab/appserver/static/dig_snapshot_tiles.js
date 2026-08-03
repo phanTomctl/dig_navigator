@@ -5,9 +5,7 @@
  *   1. stylesheet="...,dig_snapshot_tiles.css" script="...,dig_snapshot_tiles.js"
  *   2. Provide base_sample / base_structure / base_timeliness_evidence (DI token pattern)
  *   3. Tokens: datamodel_filter, field_scope
- *   4. Copy the four <search id="tile_*"> blocks from data_intelligence.xml
- *      (tile_structure_consistency, tile_cim_alignment, tile_delivery_lag,
- *       tile_datamodel_alignment) — keep SPL there as the single source of truth
+ *   4. Copy the <search id="tile_*"> blocks from data_intelligence.xml
  *   5. Mount: <div id="dig-snapshot-tiles"></div>
  *
  * Performance: no timers/polling. Listens only to SimpleXML search managers.
@@ -20,20 +18,26 @@ require([
     "use strict";
 
     /*
-     * Structure / Consistency: score 0-100 (provisional numeric bands).
-     * CIM Alignment: rule-based (not numeric cutovers) — see bandCimAlignment().
+     * Structure / Consistency / Parsing / Cardinality: score 0-100 bands.
+     * CIM Alignment: rule-based — see bandCimAlignment().
      * Delivery lag: rule-based vs lookup expected healthy lag — see bandDeliveryLag().
+     * Duplication: % bands — see bandDuplication().
      * Datamodel alignment: Current count >= 1 => green.
      */
     var THRESHOLDS = {
         structure: { green: 70, amber: 40 },
-        consistency: { green: 70, amber: 40 }
+        consistency: { green: 70, amber: 40 },
+        parsing: { green: 70, amber: 40 },
+        cardinality: { green: 70, amber: 40 }
     };
 
     var TILE_ORDER = [
         "structure",
         "consistency",
         "cim_alignment",
+        "parsing_quality",
+        "cardinality",
+        "duplication",
         "delivery_lag",
         "datamodel_alignment"
     ];
@@ -42,6 +46,9 @@ require([
         structure: null,
         consistency: null,
         cim_alignment: null,
+        parsing_quality: null,
+        cardinality: null,
+        duplication: null,
         delivery_lag: null,
         datamodel_alignment: null
     };
@@ -82,8 +89,7 @@ require([
 
     /*
      * Uses telemetry_timeliness_rules healthy_seconds (via base_timeliness_evidence).
-     * Green: no future timestamps AND average lag within expected healthy lag
-     *        (set healthy_seconds=0 on a rule to require zero average lag).
+     * Green: no future timestamps AND average lag within expected healthy lag.
      * Amber: average lag above expected, no future timestamps.
      * Red: any future timestamps in the sample.
      */
@@ -107,6 +113,24 @@ require([
             return "green";
         }
         return "amber";
+    }
+
+    /*
+     * Duplication: share of events whose raw payload is not unique in the sample.
+     * Green < 5%, Amber < 20%, Red >= 20%.
+     */
+    function bandDuplication(dupPct) {
+        var n = Number(dupPct);
+        if (!isFinite(n)) {
+            return "pending";
+        }
+        if (n < 5) {
+            return "green";
+        }
+        if (n < 20) {
+            return "amber";
+        }
+        return "red";
     }
 
     function statusLabel(band) {
@@ -237,6 +261,38 @@ require([
             band: bandCimAlignment(cim)
         });
 
+        var parsingScore = fieldVal(state.parsing_quality, ["parsing_quality_pct"]);
+        tiles.push({
+            id: "parsing_quality",
+            label: "Parsing Quality",
+            value: parsingScore != null ? parsingScore : "—",
+            sub: "Avg field fill rate (extracted fields vs events)",
+            band: bandFromScore(parsingScore, THRESHOLDS.parsing)
+        });
+
+        var cardScore = fieldVal(state.cardinality, ["cardinality_score"]);
+        var cardPressure = fieldVal(state.cardinality, ["cardinality_pressure_pct"]);
+        var cardSub = "Lower pressure from shapes / hosts / sources is better";
+        if (cardPressure != null) {
+            cardSub = "Pressure " + cardPressure + "% (shapes / hosts / sources)";
+        }
+        tiles.push({
+            id: "cardinality",
+            label: "Cardinality",
+            value: cardScore != null ? cardScore : "—",
+            sub: cardSub,
+            band: bandFromScore(cardScore, THRESHOLDS.cardinality)
+        });
+
+        var dupPct = fieldVal(state.duplication, ["duplicate_pct"]);
+        tiles.push({
+            id: "duplication",
+            label: "Duplication",
+            value: dupPct != null ? dupPct + "%" : "—",
+            sub: "Share of events with repeated raw payloads",
+            band: bandDuplication(dupPct)
+        });
+
         var lag = state.delivery_lag;
         var lagDisplay = fieldVal(lag, ["avg_lag_display"]);
         var expectedDisplay = fieldVal(lag, ["expected_healthy_display"]);
@@ -295,11 +351,14 @@ require([
         html += "<p><strong>Structure:</strong> Share of sampled events with a recognisable format (JSON, XML, KV, or delimited). Not the same as the Structured / Semi-Structured pie labels, which also use shape consistency.</p>";
         html += "<p><strong>Consistency:</strong> How stable event shapes and lengths are within the sample. Lower shape diversity and length variance score higher.</p>";
         html += "<p><strong>CIM Alignment:</strong> Of Field-scope fields for datamodels with at least one match in the sample, what share are present. Green = 100%. Amber = partial. Red = no fields matched to any selected datamodel.</p>";
+        html += "<p><strong>Parsing Quality:</strong> How completely extracted fields are populated across events (fill rate).</p>";
+        html += "<p><strong>Cardinality:</strong> Pressure from distinct shapes, hosts, and sources relative to sample size. Drill into Quality IN for detail.</p>";
+        html += "<p><strong>Duplication:</strong> Repeated raw event payloads in the sample (collection or replay risk). Drill into Quality IN for detail.</p>";
         html += "<p><strong>Delivery lag:</strong> Average ingest delay (_indextime − _time) vs expected healthy lag from <em>telemetry_timeliness_rules</em>. Green = within expected. Amber = above expected. Red = future timestamps present.</p>";
         html += "<p><strong>Datamodel alignment:</strong> Count of CIM models with Current vs Potential field evidence in scope. Green when Current ≥ 1.</p>";
         html += "</div></details></div>";
         html += '<p class="dig-snapshot-banner">Indicator strip for the selected analysis scope. Not a certification.</p>';
-        html += '<div class="dig-snapshot-grid">';
+        html += '<div class="dig-snapshot-grid dig-snapshot-grid-8">';
         TILE_ORDER.forEach(function(id) {
             var tile = tiles.filter(function(t) { return t.id === id; })[0];
             if (tile) {
@@ -317,6 +376,15 @@ require([
 
     bindSearch("tile_cim_alignment", function(row) {
         state.cim_alignment = row;
+    });
+
+    bindSearch("tile_parsing_quality", function(row) {
+        state.parsing_quality = row;
+    });
+
+    bindSearch("tile_cardinality_duplication", function(row) {
+        state.cardinality = row;
+        state.duplication = row;
     });
 
     bindSearch("tile_delivery_lag", function(row) {
