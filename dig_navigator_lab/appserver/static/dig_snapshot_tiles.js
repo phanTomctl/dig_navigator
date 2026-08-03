@@ -1,5 +1,5 @@
 /*
- * DIG Data Quality Snapshot — shared HTML/JS tile strip.
+ * DIG Data Quality Snapshot - shared HTML/JS tile strip.
  *
  * Reuse on any dashboard:
  *   1. stylesheet="...,dig_snapshot_tiles.css" script="...,dig_snapshot_tiles.js"
@@ -20,9 +20,9 @@ require([
 
     /*
      * Structure / Consistency / Parsing / Cardinality: score 0-100 bands.
-     * CIM Alignment: rule-based — see bandCimAlignment().
-     * Delivery lag: rule-based vs lookup expected healthy lag — see bandDeliveryLag().
-     * Duplication: % bands — see bandDuplication().
+     * CIM Alignment: rule-based - see bandCimAlignment().
+     * Delivery lag: rule-based vs lookup expected healthy lag - see bandDeliveryLag().
+     * Duplication: % bands - see bandDuplication().
      * Datamodel alignment: Current count >= 1 => green.
      */
     var THRESHOLDS = {
@@ -304,7 +304,7 @@ require([
             });
             html += "</div>";
         } else {
-            html += '<div class="dig-snapshot-tile-value">' + (tile.value || "—") + "</div>";
+            html += '<div class="dig-snapshot-tile-value">' + (tile.value || "-") + "</div>";
         }
         html += '<div class="dig-snapshot-tile-sub">' + (tile.sub || "") + "</div>";
         html += '<div class="dig-snapshot-tile-status">' + statusLabel(band) + "</div>";
@@ -319,7 +319,7 @@ require([
         tiles.push({
             id: "structure",
             label: "Structure",
-            value: structureScore != null ? structureScore : "—",
+            value: structureScore != null ? structureScore : "-",
             sub: "Avg structure signal in sample",
             band: bandFromScore(structureScore, THRESHOLDS.structure)
         });
@@ -328,7 +328,7 @@ require([
         tiles.push({
             id: "consistency",
             label: "Consistency",
-            value: consistencyScore != null ? consistencyScore : "—",
+            value: consistencyScore != null ? consistencyScore : "-",
             sub: "Shape / length stability in sample",
             band: bandFromScore(consistencyScore, THRESHOLDS.consistency)
         });
@@ -344,7 +344,7 @@ require([
         tiles.push({
             id: "cim_alignment",
             label: "CIM Alignment",
-            value: cimPct != null ? cimPct + "%" : "—",
+            value: cimPct != null ? cimPct + "%" : "-",
             sub: cimSub,
             band: bandCimAlignment(cim)
         });
@@ -353,7 +353,7 @@ require([
         tiles.push({
             id: "parsing_quality",
             label: "Parsing Quality",
-            value: parsingScore != null ? parsingScore : "—",
+            value: parsingScore != null ? parsingScore : "-",
             sub: "Avg field fill rate (extracted fields vs events)",
             band: bandFromScore(parsingScore, THRESHOLDS.parsing)
         });
@@ -367,7 +367,7 @@ require([
         tiles.push({
             id: "cardinality",
             label: "Cardinality",
-            value: cardScore != null ? cardScore : "—",
+            value: cardScore != null ? cardScore : "-",
             sub: cardSub,
             band: bandFromScore(cardScore, THRESHOLDS.cardinality)
         });
@@ -376,7 +376,7 @@ require([
         tiles.push({
             id: "duplication",
             label: "Duplication",
-            value: dupPct != null ? dupPct + "%" : "—",
+            value: dupPct != null ? dupPct + "%" : "-",
             sub: "Share of events with repeated raw payloads",
             band: bandDuplication(dupPct)
         });
@@ -395,7 +395,7 @@ require([
         tiles.push({
             id: "delivery_lag",
             label: "Delivery lag",
-            value: lagDisplay != null ? lagDisplay : "—",
+            value: lagDisplay != null ? lagDisplay : "-",
             sub: lagSub,
             band: bandDeliveryLag(lag)
         });
@@ -418,8 +418,8 @@ require([
             id: "datamodel_alignment",
             label: "Datamodel alignment",
             dual: [
-                { label: "Current", value: currentCount != null ? currentCount : "—" },
-                { label: "Potential", value: potentialCount != null ? potentialCount : "—" }
+                { label: "Current", value: currentCount != null ? currentCount : "-" },
+                { label: "Potential", value: potentialCount != null ? potentialCount : "-" }
             ],
             sub: "Models with field evidence in scope",
             band: dmBand

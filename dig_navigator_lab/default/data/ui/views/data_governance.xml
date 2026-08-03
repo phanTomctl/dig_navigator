@@ -192,7 +192,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance</div>
             <div class="devnull-subtitle">
-              Potential evidence completeness for High-relevance mapped datamodels — recommended CIM fields present in scope, not compliance scores.
+              Potential evidence completeness for High-relevance mapped datamodels: recommended CIM fields present in scope, not compliance scores.
             </div>
           </div>
         </div>
@@ -277,9 +277,9 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Per-framework counts of High-relevance primary controls in each completeness band, plus average recommended-field %.</p>
+              <p><strong>What this shows:</strong> Per-framework counts of High-relevance primary controls in each completeness band, plus Recommended Field Coverage.</p>
               <p><strong>Why it matters:</strong> Connects the stacked gap view to control counts and a single completeness number for drill-down into Governance IN.</p>
-              <p><strong>Read it as:</strong> Potential evidence summary only — not framework compliance or audit assurance.</p>
+              <p><strong>Read it as:</strong> Potential evidence summary only, not framework compliance or audit assurance.</p>
             </div>
           </details>
         </div>
@@ -297,8 +297,8 @@ $base_search$
     dc(primary_datamodel) as primary_datamodels
     by framework framework_version
 | eval avg_coverage_pct=round(avg_coverage_pct,1)
-| rename framework as Framework framework_version as Version mapped_controls as "Primary Controls" good_controls as Good partial_controls as Partial none_controls as None avg_coverage_pct as "Avg recommended %" mapped_capabilities as "Mapped Capabilities" primary_datamodels as "Primary Datamodels"
-| table Framework Version "Primary Controls" Good Partial None "Avg recommended %" "Mapped Capabilities" "Primary Datamodels"
+| rename framework as Framework framework_version as Version mapped_controls as "Primary Controls" good_controls as Good partial_controls as Partial none_controls as None avg_coverage_pct as "Recommended Field Coverage" mapped_capabilities as "Mapped Capabilities" primary_datamodels as "Matched Datamodels"
+| table Framework Version "Primary Controls" Good Partial None "Recommended Field Coverage" "Mapped Capabilities" "Matched Datamodels"
 | sort - Good Framework
           ]]></query>
         </search>

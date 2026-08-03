@@ -302,7 +302,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance Information Nexus</div>
             <div class="devnull-subtitle">
-              Control-level recommended-field completeness for High-relevance mappings, plus capability and source evidence detail. Potential evidence only — not compliance.
+              Control-level recommended-field completeness for High-relevance mappings, plus capability and source evidence detail. Potential evidence only, not compliance.
             </div>
           </div>
         </div>
@@ -336,7 +336,7 @@ $base_search$
         </search>
         <option name="charting.chart">bar</option>
         <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Avg recommended-field %</option>
+        <option name="charting.axisTitleX.text">Recommended Field Coverage</option>
         <option name="charting.axisTitleY.text">Framework</option>
         <option name="charting.seriesColors">[#00e5ff]</option>
       </chart>

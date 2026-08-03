@@ -1,5 +1,5 @@
 /*
- * DIG Data Quality Dimensions — HTML/JS tile strip for Quality IN.
+ * DIG Data Quality Dimensions - HTML/JS tile strip for Quality IN.
  *
  * Reuses dig_snapshot_tiles.css (shared visual language with Snapshot / Delivery).
  *
@@ -163,7 +163,7 @@ require([
         var band = tile.band || "pending";
         var html = '<div class="dig-snapshot-tile is-' + band + '" data-tile="' + tile.id + '">';
         html += '<div class="dig-snapshot-tile-label">' + tile.label + "</div>";
-        html += '<div class="dig-snapshot-tile-value">' + (tile.value || "—") + "</div>";
+        html += '<div class="dig-snapshot-tile-value">' + (tile.value || "-") + "</div>";
         html += '<div class="dig-snapshot-tile-sub">' + (tile.sub || "") + "</div>";
         html += '<div class="dig-snapshot-tile-status">' + statusLabel(band) + "</div>";
         html += "</div>";
@@ -178,7 +178,7 @@ require([
         tiles.push({
             id: "structure",
             label: "Structure",
-            value: structureScore != null ? structureScore : "—",
+            value: structureScore != null ? structureScore : "-",
             sub: "Avg structure signal in sample",
             band: bandFromScore(structureScore, THRESHOLDS.structure)
         });
@@ -187,7 +187,7 @@ require([
         tiles.push({
             id: "consistency",
             label: "Consistency",
-            value: consistencyScore != null ? consistencyScore : "—",
+            value: consistencyScore != null ? consistencyScore : "-",
             sub: "Shape / length stability in sample",
             band: bandFromScore(consistencyScore, THRESHOLDS.consistency)
         });
@@ -202,7 +202,7 @@ require([
         tiles.push({
             id: "cim_alignment",
             label: "CIM Alignment",
-            value: cimPct != null ? cimPct + "%" : "—",
+            value: cimPct != null ? cimPct + "%" : "-",
             sub: cimSub,
             band: bandCimAlignment(cim)
         });
@@ -211,7 +211,7 @@ require([
         tiles.push({
             id: "parsing_quality",
             label: "Parsing Quality",
-            value: parsingScore != null ? parsingScore : "—",
+            value: parsingScore != null ? parsingScore : "-",
             sub: "Avg field fill rate (extracted fields vs events)",
             band: bandFromScore(parsingScore, THRESHOLDS.parsing)
         });
@@ -225,7 +225,7 @@ require([
         tiles.push({
             id: "cardinality",
             label: "Cardinality",
-            value: cardScore != null ? cardScore : "—",
+            value: cardScore != null ? cardScore : "-",
             sub: cardSub,
             band: bandFromScore(cardScore, THRESHOLDS.cardinality)
         });
@@ -234,7 +234,7 @@ require([
         tiles.push({
             id: "duplication",
             label: "Duplication",
-            value: dupPct != null ? dupPct + "%" : "—",
+            value: dupPct != null ? dupPct + "%" : "-",
             sub: "Share of events with repeated raw payloads",
             band: bandDuplication(dupPct)
         });

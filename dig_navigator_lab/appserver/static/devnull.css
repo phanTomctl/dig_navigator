@@ -334,7 +334,7 @@ body,
     margin-bottom: 10px;
 }
 
-/* Hide Splunk's native Hide/Show Filters — DIG owns this in the toolbar */
+/* Hide Splunk's native Hide/Show Filters - DIG owns this in the toolbar */
 .hide-global-filters,
 .show-global-filters,
 a.hide-global-filters,

@@ -10,7 +10,7 @@
  *   some Splunk 10 builds and can break dashboard loading.
  * - Direct opens load saved per-user KV scope.
  * - Drilldowns stash live scope in sessionStorage at click time and rewrite
- *   form.base_search (etc.) in the href from the visible inputs — SimpleXML
+ *   form.base_search (etc.) in the href from the visible inputs - SimpleXML
  *   $base_search$ / $form.base_search$ are not reliable for unsaved edits.
  * - Landing pages consume the stash (then URL) before KV so saved scope cannot win.
  * - Native Splunk Hide Filters control is hidden; DIG owns Show/Hide Filters in
@@ -285,7 +285,7 @@ require([
 
     function installDrilldownScopeRewrite() {
         // Stash early: Splunk often builds the drilldown URL from tokens and
-        // window.open()s it — there may be no <a href> for us to rewrite.
+        // window.open()s it - there may be no <a href> for us to rewrite.
         $(document).on("mousedown", ".dashboard-element, .dashboard-panel, .panel-element", function() {
             stashDrilldownScope(readCurrentScope());
         });
@@ -389,7 +389,7 @@ require([
             latest = timeValue.latest_time || timeValue.latest || latest;
         }
 
-        // Prefer visible DOM values — tokens lag when the user edits without Apply.
+        // Prefer visible DOM values - tokens lag when the user edits without Apply.
         var baseSearch = readDomTextValue(".dig-analysis-scope-input") ||
             readComponentValue("base_search") ||
             getToken("form.base_search", "base_search", DEFAULT_SCOPE.base_search);
@@ -652,7 +652,7 @@ require([
     }
 
     function installFilterVisibilitySync() {
-        // Own the control — do not depend on Splunk's native Hide Filters link.
+        // Own the control - do not depend on Splunk's native Hide Filters link.
         $(document).on("click", "#dig_toggle_filters", function(e) {
             e.preventDefault();
             e.stopPropagation();

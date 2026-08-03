@@ -1,5 +1,5 @@
 /*
- * DIG Delivery Summary — HTML/JS tile strip for Telemetry Delivery IN.
+ * DIG Delivery Summary - HTML/JS tile strip for Telemetry Delivery IN.
  *
  * Reuses dig_snapshot_tiles.css (shared visual language with Data Quality Snapshot).
  *
@@ -188,7 +188,7 @@ require([
             });
             html += "</div>";
         } else {
-            html += '<div class="dig-snapshot-tile-value">' + (tile.value || "—") + "</div>";
+            html += '<div class="dig-snapshot-tile-value">' + (tile.value || "-") + "</div>";
         }
         html += '<div class="dig-snapshot-tile-sub">' + (tile.sub || "") + "</div>";
         html += '<div class="dig-snapshot-tile-status">' + statusLabel(band) + "</div>";
@@ -204,7 +204,7 @@ require([
         tiles.push({
             id: "worst_status",
             label: "Worst Status",
-            value: worst != null ? worst : "—",
+            value: worst != null ? worst : "-",
             sub: "Most severe delay or timestamp signal in sample",
             band: bandFromWorstStatus(worst)
         });
@@ -216,7 +216,7 @@ require([
         tiles.push({
             id: "median_delay",
             label: "Median Delay",
-            value: medianDisplay != null ? medianDisplay : "—",
+            value: medianDisplay != null ? medianDisplay : "-",
             sub: "Half of events arrived within this lag",
             band: bandFromDelaySeconds(medianSeconds, healthySeconds, warningSeconds)
         });
@@ -226,7 +226,7 @@ require([
         tiles.push({
             id: "p95_delay",
             label: "P95 Delay",
-            value: p95Display != null ? p95Display : "—",
+            value: p95Display != null ? p95Display : "-",
             sub: "95% of events within this lag",
             band: bandFromDelaySeconds(p95Seconds, healthySeconds, warningSeconds)
         });
