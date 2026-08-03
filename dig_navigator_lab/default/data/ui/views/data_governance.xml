@@ -449,15 +449,15 @@ $base_search$
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
     | eval selected_framework_wrapped="|" . selected_framework . "|"
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework datamodel searchable_retention_recommendation
+    | fields framework datamodel retention_importance
 ]
 | eval governance_mapped=if(isnotnull(framework),1,0)
-| stats values(searchable_retention_recommendation) as searchable_values max(governance_mapped) as governance_mapped by group_value
+| stats values(retention_importance) as importance_values max(governance_mapped) as governance_mapped by group_value
 | eval retention_category=case(
     governance_mapped=0, "Unmapped / review",
-    mvfind(searchable_values,"Long")>=0 OR mvfind(searchable_values,"long")>=0 OR mvfind(searchable_values,"summary")>=0, "Longer summary",
-    mvfind(searchable_values,"Medium")>=0 OR mvfind(searchable_values,"medium")>=0, "Medium",
-    mvfind(searchable_values,"Short")>=0 OR mvfind(searchable_values,"short")>=0, "Short-to-medium",
+    mvfind(importance_values,"High")>=0, "Keep through investigation/audit window",
+    mvfind(importance_values,"Medium")>=0, "Keep for operational review",
+    mvfind(importance_values,"Low")>=0, "Short searchable window",
     true(), "Review"
 )
 | stats count by retention_category
@@ -483,16 +483,16 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> A source-level evidence summary of framework mapping, datamodel coverage, retention guidance and tiering guidance.</p>
-              <p><strong>Why it matters:</strong> Bringing these signals together helps explain why some telemetry appears more relevant to governance, audit or investigation conversations.</p>
-              <p><strong>Read it as:</strong> This is an evidence summary, not a decision record. Unmapped rows may still contain useful datamodel evidence, but no governance mapping currently exists for those datamodels in the selected framework scope.</p>
+              <p><strong>What this shows:</strong> Per data source: governance relevance, recommended search tier, searchable-retention and edge guidance, plus the High-relevance datamodels that drove those recommendations.</p>
+              <p><strong>Why it matters:</strong> This is the executive “what should we keep searchable?” view — not a dump of every mapped framework and capability.</p>
+              <p><strong>Read it as:</strong> Guidance from configured mappings against observed CIM fields. Not a retention policy or compliance decision. Drill into Governance IN for full mapping detail.</p>
             </div>
           </details>
         </div>
       </html>
       <html>
         <div class="panel-subtitle">
-          <p><strong>This does not assert compliance. It highlights telemetry that appears relevant to selected governance drivers and shows where mapping is currently missing.</strong></p>
+          <p><strong>Potential evidence guidance only — not a retention or compliance decision.</strong></p>
         </div>
       </html>
       <table>
@@ -505,26 +505,36 @@ $base_search$
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
     | eval selected_framework_wrapped="|" . selected_framework . "|"
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework requirement_area capability datamodel governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation
+    | fields framework datamodel governance_relevance mapping_confidence retention_importance tiering_recommendation
 ]
 | eval governance_mapped=if(isnotnull(framework),1,0)
+| eval is_primary_dm=if(governance_relevance="High",1,0)
+| appendpipe [
+    | where is_primary_dm=1
+    | stats dc(field_name) as dm_field_hits by group_value datamodel
+    | sort group_value - dm_field_hits
+    | streamstats count as dm_rank by group_value
+    | where dm_rank<=5
+    | eval top_item=datamodel . " (" . dm_field_hits . ")"
+    | stats values(top_item) as top_primary_datamodels by group_value
+    | eval top_pipe=1
+]
+| eventstats values(top_primary_datamodels) as top_primary_datamodels by group_value
+| where isnull(top_pipe)
 | stats
     dc(field_name) as matched_dm_fields
     dc(datamodel) as matched_datamodel_count
-    values(framework) as frameworks
-    values(capability) as capabilities
-    values(datamodel) as datamodels
-    values(eval(if(governance_mapped=1,datamodel,null()))) as governance_mapped_datamodels
-    values(eval(if(governance_mapped=0,datamodel,null()))) as unmapped_datamodels
+    dc(eval(if(governance_mapped=1,framework,null()))) as framework_count
+    dc(eval(if(is_primary_dm=1,datamodel,null()))) as primary_dm_count
+    dc(eval(if(governance_mapped=1 AND is_primary_dm=0,datamodel,null()))) as supporting_dm_count
+    dc(eval(if(governance_mapped=0,datamodel,null()))) as unmapped_dm_count
+    values(top_primary_datamodels) as top_primary_datamodels
     values(governance_relevance) as relevance_values
     values(mapping_confidence) as confidence_values
     values(retention_importance) as importance_values
     values(tiering_recommendation) as tiering_values
-    values(searchable_retention_recommendation) as searchable_values
-    values(edge_processing_recommendation) as edge_values
     max(governance_mapped) as governance_mapped
     by group_value
-| eval frameworks=if(isnull(frameworks),"Unmapped",frameworks)
 | eval high_relevance=if(mvfind(relevance_values,"High")>=0 OR mvfind(relevance_values,"Medium-High")>=0,1,0)
 | eval high_confidence=if(mvfind(confidence_values,"High")>=0,1,0)
 | eval medium_confidence=if(mvfind(confidence_values,"Medium")>=0,1,0)
@@ -542,27 +552,51 @@ $base_search$
     mvfind(tiering_values,"Tier 3")>=0, "Tier 3",
     true(), "Review"
 )
+| eval strongest_importance=case(
+    mvfind(importance_values,"High")>=0, "High",
+    mvfind(importance_values,"Medium")>=0, "Medium",
+    mvfind(importance_values,"Low")>=0, "Low",
+    true(), null()
+)
 | eval searchable_retention=case(
     governance_mapped=0, "Unmapped / review",
-    mvfind(searchable_values,"Long")>=0 OR mvfind(searchable_values,"long")>=0 OR mvfind(searchable_values,"summary")>=0, "Longer summary",
-    mvfind(searchable_values,"Medium")>=0 OR mvfind(searchable_values,"medium")>=0, "Medium",
-    mvfind(searchable_values,"Short")>=0 OR mvfind(searchable_values,"short")>=0, "Short-to-medium",
+    strongest_importance="High", "Keep searchable through investigation/audit window",
+    strongest_importance="Medium", "Keep searchable for operational review",
+    strongest_importance="Low", "Short searchable window usually enough",
     true(), "Review"
 )
 | eval edge_processing_guidance=case(
     governance_mapped=0, "Unmapped / review",
-    mvfind(edge_values,"Do not filter")>=0, "Preserve governance evidence fields",
-    mvfind(edge_values,"extract")>=0, "Extract required governance fields",
+    strongest_importance="High", "Preserve governance evidence fields at the edge",
+    strongest_importance="Medium", "Prefer preserving key fields; reduce only after checks",
+    strongest_importance="Low", "Edge reduction OK if stronger sources remain",
     true(), "Review"
 )
-| rename group_value as grouping
-| table grouping governance_relevance frameworks capabilities governance_mapped_datamodels unmapped_datamodels matched_dm_fields recommended_tier searchable_retention edge_processing_guidance
-| sort governance_relevance - matched_dm_fields grouping
+| eval top_primary_datamodels=if(isnull(top_primary_datamodels),"-",mvjoin(top_primary_datamodels,", "))
+| eval primary_dm_count=coalesce(primary_dm_count,0)
+| eval supporting_dm_count=coalesce(supporting_dm_count,0)
+| eval unmapped_dm_count=coalesce(unmapped_dm_count,0)
+| eval framework_count=coalesce(framework_count,0)
+| rename
+    group_value as Source
+    governance_relevance as Relevance
+    recommended_tier as Tier
+    searchable_retention as "Searchable retention"
+    edge_processing_guidance as "Edge guidance"
+    top_primary_datamodels as "Top primary datamodels"
+    primary_dm_count as "Primary DMs"
+    supporting_dm_count as "Supporting DMs"
+    unmapped_dm_count as "Unmapped DMs"
+    matched_dm_fields as "CIM fields"
+    framework_count as Frameworks
+| table Source Relevance Tier "Searchable retention" "Edge guidance" "Top primary datamodels" "Primary DMs" "Supporting DMs" "Unmapped DMs" "CIM fields" Frameworks
+| sort Relevance - "CIM fields" Source
           ]]></query>
         </search>
-        <option name="count">5</option>
+        <option name="count">15</option>
+        <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.grouping|u$&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.Source|u$&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
       </table>
     </panel>
