@@ -231,7 +231,7 @@ $base_search$
         <option name="charting.axisTitleY.text">Framework</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value2|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value2|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -263,7 +263,7 @@ $base_search$
         <option name="charting.chart.showLabels">1</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -304,7 +304,7 @@ $base_search$
         </search>
         <option name="count">20</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </table>
     </panel>
@@ -336,7 +336,7 @@ $base_search$
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
     | eval selected_framework_wrapped="|" . selected_framework . "|"
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework datamodel governance_relevance mapping_confidence retention_importance
+    | fields framework datamodel governance_relevance mapping_confidence
 ]
 | eval governance_mapped=if(isnotnull(framework),1,0)
 | stats
@@ -344,7 +344,6 @@ $base_search$
     dc(datamodel) as matched_datamodel_count
     values(governance_relevance) as relevance_values
     values(mapping_confidence) as confidence_values
-    values(retention_importance) as importance_values
     max(governance_mapped) as governance_mapped
     by group_value
 | eval high_relevance=if(mvfind(relevance_values,"High")>=0 OR mvfind(relevance_values,"Medium-High")>=0,1,0)
@@ -366,133 +365,26 @@ $base_search$
         <option name="charting.chart.showLabels">1</option>
         <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=$click.value|u$&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=$click.value|u$]]></link>
         </drilldown>
       </chart>
     </panel>
 
-    <panel>
-      <title>Search Tier Guidance</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> A source-level tiering guidance indicator derived from matched governance mappings.</p>
-              <p><strong>Why it matters:</strong> Tiering context can help frame discussions about searchability, archival value and governance evidence preservation.</p>
-              <p><strong>Read it as:</strong> This is guidance from configured mappings, not a policy decision. Final tiering decisions should consider customer policy, operational use and regulatory requirements.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_group_matches">
-          <query><![CDATA[
-| mvexpand datamodels
-| rename datamodels as datamodel
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
-    | eval selected_framework_wrapped="|" . selected_framework . "|"
-    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework datamodel tiering_recommendation
-]
-| eval governance_mapped=if(isnotnull(framework),1,0)
-| stats values(tiering_recommendation) as tiering_values max(governance_mapped) as governance_mapped by group_value
-| eval recommended_tier=case(
-    governance_mapped=0, "Unmapped / review",
-    mvfind(tiering_values,"Tier 1")>=0, "Tier 1",
-    mvfind(tiering_values,"Tier 2")>=0, "Tier 2",
-    mvfind(tiering_values,"Tier 3")>=0, "Tier 3",
-    mvfind(tiering_values,"keep_audit_searchable")>=0, "Keep searchable",
-    mvfind(tiering_values,"keep_detection_fields_searchable")>=0, "Keep searchable",
-    mvfind(tiering_values,"archive_raw_keep_network_core")>=0, "Searchable core + raw archive",
-    mvfind(tiering_values,"archive_raw_keep_inventory_core")>=0, "Searchable core + raw archive",
-    mvfind(tiering_values,"archive_raw_reduce_searchable_fields")>=0, "Archive raw + reduce searchable fields",
-    true(), "Review"
-)
-| stats count by recommended_tier
-          ]]></query>
-        </search>
-        <option name="charting.chart">pie</option>
-        <option name="charting.legend.placement">bottom</option>
-        <option name="charting.chart.showPercent">1</option>
-        <option name="charting.chart.showLabels">1</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
-        <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=$click.value|u$&form.retention_filter=*]]></link>
-        </drilldown>
-      </chart>
-    </panel>
-
-    <panel>
-      <title>Retention Guidance</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Searchable-retention guidance derived from governance-mapped framework evidence.</p>
-              <p><strong>Why it matters:</strong> Retention context helps identify where telemetry may have ongoing governance, audit or investigation value.</p>
-              <p><strong>Read it as:</strong> This is not a retention policy or legal recommendation. It reflects configured governance mapping evidence within the selected scope.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_group_matches">
-          <query><![CDATA[
-| mvexpand datamodels
-| rename datamodels as datamodel
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
-    | eval selected_framework_wrapped="|" . selected_framework . "|"
-    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework datamodel retention_importance
-]
-| eval governance_mapped=if(isnotnull(framework),1,0)
-| stats values(retention_importance) as importance_values max(governance_mapped) as governance_mapped by group_value
-| eval retention_category=case(
-    governance_mapped=0, "Unmapped / review",
-    mvfind(importance_values,"High")>=0, "Keep through investigation/audit window",
-    mvfind(importance_values,"Medium")>=0, "Keep for operational review",
-    mvfind(importance_values,"Low")>=0, "Short searchable window",
-    true(), "Review"
-)
-| stats count by retention_category
-          ]]></query>
-        </search>
-        <option name="charting.chart">pie</option>
-        <option name="charting.legend.placement">bottom</option>
-        <option name="charting.chart.showPercent">1</option>
-        <option name="charting.chart.showLabels">1</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
-        <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=$click.value|u$]]></link>
-        </drilldown>
-      </chart>
-    </panel>
   </row>
 
   <row>
-    <panel>
-      <title>Governance Retention &amp; Tiering Evidence Summary</title>
+        <panel>
+      <title>Source Governance Evidence Summary</title>
       <html>
         <div class="context-toggle">
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Per data source: governance relevance, recommended search tier, searchable-retention and edge guidance, plus the High-relevance datamodels that drove those recommendations.</p>
-              <p><strong>Why it matters:</strong> This is the executive “what should we keep searchable?” view — not a dump of every mapped framework and capability.</p>
-              <p><strong>Read it as:</strong> Guidance from configured mappings against observed CIM fields. Not a retention policy or compliance decision. Drill into Governance IN for full mapping detail.</p>
+              <p><strong>What this shows:</strong> Per data source: governance relevance, High-relevance datamodels with the strongest field evidence, and counts of primary / supporting / unmapped datamodels.</p>
+              <p><strong>Why it matters:</strong> Shows which sources contribute potential governance evidence without prescribing retention, tiering, or edge-processing policy.</p>
+              <p><strong>Read it as:</strong> Potential evidence summary from configured mappings and observed CIM fields. Drill into Governance IN for full mapping detail.</p>
             </div>
           </details>
-        </div>
-      </html>
-      <html>
-        <div class="panel-subtitle">
-          <p><strong>Potential evidence guidance only — not a retention or compliance decision.</strong></p>
         </div>
       </html>
       <table>
@@ -505,7 +397,7 @@ $base_search$
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
     | eval selected_framework_wrapped="|" . selected_framework . "|"
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework datamodel governance_relevance mapping_confidence retention_importance tiering_recommendation
+    | fields framework datamodel governance_relevance mapping_confidence
 ]
 | eval governance_mapped=if(isnotnull(framework),1,0)
 | eval is_primary_dm=if(governance_relevance="High",1,0)
@@ -531,8 +423,6 @@ $base_search$
     values(top_primary_datamodels) as top_primary_datamodels
     values(governance_relevance) as relevance_values
     values(mapping_confidence) as confidence_values
-    values(retention_importance) as importance_values
-    values(tiering_recommendation) as tiering_values
     max(governance_mapped) as governance_mapped
     by group_value
 | eval high_relevance=if(mvfind(relevance_values,"High")>=0 OR mvfind(relevance_values,"Medium-High")>=0,1,0)
@@ -545,33 +435,6 @@ $base_search$
     medium_confidence=1, "Medium",
     true(), "Low"
 )
-| eval recommended_tier=case(
-    governance_mapped=0, "Unmapped / review",
-    mvfind(tiering_values,"Tier 1")>=0, "Tier 1",
-    mvfind(tiering_values,"Tier 2")>=0, "Tier 2",
-    mvfind(tiering_values,"Tier 3")>=0, "Tier 3",
-    true(), "Review"
-)
-| eval strongest_importance=case(
-    mvfind(importance_values,"High")>=0, "High",
-    mvfind(importance_values,"Medium")>=0, "Medium",
-    mvfind(importance_values,"Low")>=0, "Low",
-    true(), null()
-)
-| eval searchable_retention=case(
-    governance_mapped=0, "Unmapped / review",
-    strongest_importance="High", "Keep searchable through investigation/audit window",
-    strongest_importance="Medium", "Keep searchable for operational review",
-    strongest_importance="Low", "Short searchable window usually enough",
-    true(), "Review"
-)
-| eval edge_processing_guidance=case(
-    governance_mapped=0, "Unmapped / review",
-    strongest_importance="High", "Preserve governance evidence fields at the edge",
-    strongest_importance="Medium", "Prefer preserving key fields; reduce only after checks",
-    strongest_importance="Low", "Edge reduction OK if stronger sources remain",
-    true(), "Review"
-)
 | eval top_primary_datamodels=if(isnull(top_primary_datamodels),"-",mvjoin(top_primary_datamodels,", "))
 | eval primary_dm_count=coalesce(primary_dm_count,0)
 | eval supporting_dm_count=coalesce(supporting_dm_count,0)
@@ -580,23 +443,20 @@ $base_search$
 | rename
     group_value as Source
     governance_relevance as Relevance
-    recommended_tier as Tier
-    searchable_retention as "Searchable retention"
-    edge_processing_guidance as "Edge guidance"
     top_primary_datamodels as "Top primary datamodels"
     primary_dm_count as "Primary DMs"
     supporting_dm_count as "Supporting DMs"
     unmapped_dm_count as "Unmapped DMs"
     matched_dm_fields as "CIM fields"
     framework_count as Frameworks
-| table Source Relevance Tier "Searchable retention" "Edge guidance" "Top primary datamodels" "Primary DMs" "Supporting DMs" "Unmapped DMs" "CIM fields" Frameworks
+| table Source Relevance "Top primary datamodels" "Primary DMs" "Supporting DMs" "Unmapped DMs" "CIM fields" Frameworks
 | sort Relevance - "CIM fields" Source
           ]]></query>
         </search>
         <option name="count">15</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.Source|u$&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.Source|u$&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
         </drilldown>
       </table>
     </panel>
@@ -632,7 +492,7 @@ $base_search$
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
     | eval selected_framework_wrapped="|" . selected_framework . "|"
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance tiering_recommendation searchable_retention_recommendation mapping_rationale source_terms source_url review_status notes
+    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence mapping_rationale source_terms source_url review_status notes
 ]
 | stats
     dc(field_name) as matched_dm_fields
@@ -640,23 +500,20 @@ $base_search$
     values(capability) as capabilities
     values(governance_relevance) as governance_relevance
     values(mapping_confidence) as mapping_confidence
-    values(retention_importance) as retention_importance
-    values(tiering_recommendation) as tiering_recommendation
-    values(searchable_retention_recommendation) as searchable_retention_recommendation
     values(source_terms) as source_terms
     values(mapping_rationale) as mapping_rationale
     values(source_url) as source_url
     values(review_status) as review_status
     values(notes) as notes
     by group_value framework framework_version datamodel
-| rename group_value as grouping framework as Framework framework_version as Version datamodel as Datamodel matched_dm_fields as "Matched DM Fields" requirement_areas as "Requirement Areas" capabilities as Capabilities governance_relevance as Relevance mapping_confidence as Confidence retention_importance as "Retention Importance" tiering_recommendation as "Recommended Tier" searchable_retention_recommendation as "Searchable Retention" source_terms as "Source Terms" mapping_rationale as Rationale source_url as "Source URL" review_status as "Review Status"
-| table grouping Framework Version Datamodel "Requirement Areas" Capabilities Relevance Confidence "Matched DM Fields" "Retention Importance" "Recommended Tier" "Searchable Retention" "Source Terms" Rationale "Source URL" "Review Status" notes
+| rename group_value as grouping framework as Framework framework_version as Version datamodel as Datamodel matched_dm_fields as "Matched DM Fields" requirement_areas as "Requirement Areas" capabilities as Capabilities governance_relevance as Relevance mapping_confidence as Confidence source_terms as "Source Terms" mapping_rationale as Rationale source_url as "Source URL" review_status as "Review Status"
+| table grouping Framework Version Datamodel "Requirement Areas" Capabilities Relevance Confidence "Matched DM Fields" "Source Terms" Rationale "Source URL" "Review Status" notes
 | sort grouping Framework Datamodel
           ]]></query>
         </search>
         <option name="count">5</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.grouping|u$&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$row.Datamodel|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.grouping|u$&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$row.Datamodel|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
         </drilldown>
       </table>
     </panel>

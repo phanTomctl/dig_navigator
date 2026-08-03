@@ -38,7 +38,7 @@
           <ol>
             <li><strong>First time run?</strong> Make sure to navigate to the Configuration page to create the necessary lookups that help to power this app.</li>
             <li><strong>Start with Data Intelligence</strong> to identify data quality, structure, CIM alignment, and datamodel readiness concerns.</li>
-            <li><strong>Review Data Governance</strong> to understand freshness, timeliness, coverage, retention, and governance alignment signals.</li>
+            <li><strong>Review Data Governance</strong> to understand freshness, timeliness, coverage, and governance alignment signals.</li>
             <li><strong>Use DIG Intelligence Nexus (IN) dashboards</strong> to investigate the evidence behind executive-level findings.</li>
             <li><strong>Act on the evidence</strong> by updating onboarding, field extractions, CIM tags, datamodel alignment, governance mappings, or telemetry timeliness rules where appropriate.</li>
           </ol>

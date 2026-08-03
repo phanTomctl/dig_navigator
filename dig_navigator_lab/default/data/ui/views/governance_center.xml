@@ -110,24 +110,6 @@ $base_search$
       <default>*</default>
     </input>
 
-    <input type="dropdown" token="tier_filter" searchWhenChanged="true">
-      <label>Tier recommendation</label>
-      <choice value="*">All</choice>
-      <choice value="Tier 1">Tier 1</choice>
-      <choice value="Tier 2">Tier 2</choice>
-      <choice value="Tier 3">Tier 3</choice>
-      <default>*</default>
-    </input>
-
-    <input type="dropdown" token="retention_filter" searchWhenChanged="true">
-      <label>Retention importance</label>
-      <choice value="*">All</choice>
-      <choice value="High">High</choice>
-      <choice value="Medium-High">Medium-High</choice>
-      <choice value="Medium">Medium</choice>
-      <choice value="Low">Low</choice>
-      <default>*</default>
-    </input>
   
 
     <input type="text" token="sample_limit">
@@ -192,7 +174,7 @@ $base_search$
     | eval selected_dm_wrapped="|" . selected_dm . "|"
     | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
     | eval mapping_row=1
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation source_terms mapping_rationale source_url mapping_method review_status notes mapping_row
+    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes mapping_row
 ]
 | eventstats max(datamodel_observed) as datamodel_observed max(matched_fields) as matched_fields max(field_instances) as field_instances values(matched_field_names) as matched_field_names values(groups) as groups by datamodel
 | where mapping_row=1
@@ -202,7 +184,7 @@ $base_search$
 | where selected_coverage="*" OR coverage_state=selected_coverage
 | eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
 | eval covered_weight=if(datamodel_observed=1,mapping_weight,0)
-| fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation source_terms mapping_rationale source_url mapping_method review_status notes datamodel_observed coverage_state mapping_weight covered_weight matched_fields field_instances matched_field_names groups
+| fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes datamodel_observed coverage_state mapping_weight covered_weight matched_fields field_instances matched_field_names groups
     ]]></query>
   </search>
 
@@ -302,16 +284,14 @@ $base_search$
     | eval selected_capability=if(len("$capability_filter$")=0,"*","$capability_filter$")
     | eval selected_capability_wrapped="|" . selected_capability . "|"
     | where selected_capability="*" OR like(selected_capability_wrapped,"%|*|%") OR like(selected_capability_wrapped,"%|" . capability . "|%")
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation source_terms mapping_rationale source_url mapping_method review_status notes
+    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes
 ]
 | eval governance_mapped=if(isnotnull(framework),1,0)
 | eval coverage_state=if(governance_mapped=1,"Covered","Unmapped")
 | where "$coverage_filter$"="*" OR ("$coverage_filter$"="Covered" AND governance_mapped=1) OR ("$coverage_filter$"="Missing" AND governance_mapped=0)
 | where "$governance_relevance_filter$"="*" OR governance_relevance="$governance_relevance_filter$"
-| where "$tier_filter$"="*" OR tiering_recommendation="$tier_filter$"
-| where "$retention_filter$"="*" OR retention_importance="$retention_filter$"
 | eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
-| fields group_value field_name field_instances datamodel framework framework_version control_reference requirement_area capability governance_relevance mapping_confidence retention_importance raw_retention_recommendation searchable_retention_recommendation edge_processing_recommendation tiering_recommendation source_terms mapping_rationale source_url mapping_method review_status notes governance_mapped coverage_state mapping_weight
+| fields group_value field_name field_instances datamodel framework framework_version control_reference requirement_area capability governance_relevance mapping_confidence source_terms mapping_rationale source_url mapping_method review_status notes governance_mapped coverage_state mapping_weight
     ]]></query>
   </search>
   <row>
@@ -597,7 +577,7 @@ $base_search$
 | eval mapping_coverage_pct=if(matched_datamodel_count>0,round((mapped_datamodel_count/matched_datamodel_count)*100,2),0)
 | eval brief=case(
     mapped_datamodel_count=0, "CIM/datamodel relevance was detected, but no governance framework mapping is currently configured for the matched datamodels. Treat this as a governance mapping opportunity rather than a compliance gap.",
-    mapping_coverage_pct>=80, "Most detected datamodel relevance has governance framework mapping configured. This is a strong starting point for framework coverage, retention, tiering and policy alignment conversations.",
+    mapping_coverage_pct>=80, "Most detected datamodel relevance has governance framework mapping configured. This is a strong starting point for framework-evidence conversations.",
     mapping_coverage_pct>=40, "Some detected datamodel relevance has governance framework mapping configured. Recommendations are useful, but unmapped areas should be reviewed before final decisions are made.",
     true(), "Limited governance framework mapping is configured for the detected datamodel relevance. Use the evidence below to prioritise mapping expansion and customer policy discussion."
 )
@@ -621,7 +601,7 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Data Source-level governance evidence, mapped frameworks, mapped capabilities, matched datamodels, retention guidance and tiering guidance.</p>
+              <p><strong>What this shows:</strong> Data Source-level governance evidence, mapped frameworks, mapped capabilities and matched datamodels.</p>
               <p><strong>How to use it:</strong> Use this to compare Data Source values and identify where guidance exists, where mapping is missing, and where further validation is needed.</p>
               <p><strong>Read it as:</strong> This is not a compliance assertion. It is an evidence-based view of configured governance mapping and detected datamodel relevance.</p>
             </div>
@@ -640,10 +620,6 @@ $base_search$
     values(eval(if(governance_mapped=1,datamodel,null()))) as governance_mapped_datamodels
     values(eval(if(governance_mapped=0,datamodel,null()))) as unmapped_datamodels
     values(governance_relevance) as relevance_values
-    values(retention_importance) as retention_values
-    values(tiering_recommendation) as tiering_values
-    values(searchable_retention_recommendation) as searchable_values
-    values(edge_processing_recommendation) as edge_values
     max(governance_mapped) as governance_mapped
     by group_value
 | eval frameworks=if(isnull(frameworks),"Unmapped",frameworks)
@@ -658,35 +634,15 @@ $base_search$
     medium_relevance=1, "Medium",
     true(), "Low"
 )
-| eval recommended_tier=case(
-    governance_mapped=0, "Unmapped / review",
-    mvfind(tiering_values,"Tier 1")>=0, "Tier 1",
-    mvfind(tiering_values,"Tier 2")>=0, "Tier 2",
-    mvfind(tiering_values,"Tier 3")>=0, "Tier 3",
-    true(), "Review"
-)
-| eval searchable_retention=case(
-    governance_mapped=0, "Unmapped / review",
-    mvfind(retention_values,"High")>=0, "High",
-    mvfind(retention_values,"Medium-High")>=0, "Medium-High",
-    mvfind(retention_values,"Medium")>=0, "Medium",
-    mvfind(retention_values,"Low")>=0, "Low",
-    true(), "Review"
-)
-| eval edge_processing_guidance=case(
-    governance_mapped=0, "Unmapped / review",
-    isnotnull(edge_values), edge_values,
-    true(), "Review"
-)
 | eval consultant_talking_point=case(
-    governance_relevance="High", "Lead with operational importance: this data appears highly relevant to security, audit or investigation outcomes. Validate ownership, use cases and retention policy.",
-    governance_relevance="Medium-High", "Position as a strong candidate for governance review: evidence exists, but confirm business use and retention expectations.",
-    governance_relevance="Medium", "Use as a prioritisation discussion: decide whether this data supports enough use cases to justify searchable retention or optimisation effort.",
+    governance_relevance="High", "Lead with operational importance: this data appears highly relevant to security, audit or investigation outcomes. Validate ownership and use cases.",
+    governance_relevance="Medium-High", "Position as a strong candidate for governance review: evidence exists, but confirm business use.",
+    governance_relevance="Medium", "Use as a prioritisation discussion: decide whether this data supports enough use cases to justify further mapping or optimisation effort.",
     governance_relevance="Unmapped", "Frame as a knowledge-base opportunity: DIG found datamodel relevance, but governance framework mapping needs to be configured or validated.",
     true(), "Use as a review candidate: current evidence suggests limited governance relevance, but confirm against customer policy and business context."
 )
 | rename group_value as "Data Source"
-| table "Data Source" governance_relevance frameworks capabilities governance_mapped_datamodels unmapped_datamodels matched_dm_fields recommended_tier searchable_retention edge_processing_guidance consultant_talking_point
+| table "Data Source" governance_relevance frameworks capabilities governance_mapped_datamodels unmapped_datamodels matched_dm_fields consultant_talking_point
 | sort governance_relevance - matched_dm_fields "Data Source"
           ]]></query>
         </search>
@@ -721,10 +677,6 @@ $base_search$
     values(capability) as capabilities
     values(governance_relevance) as governance_relevance
     values(mapping_confidence) as mapping_confidence
-    values(retention_importance) as retention_importance
-    values(tiering_recommendation) as tiering_recommendation
-    values(searchable_retention_recommendation) as searchable_retention_recommendation
-    values(edge_processing_recommendation) as edge_processing_recommendation
     values(notes) as notes
     max(governance_mapped) as governance_mapped
     by group_value datamodel
@@ -732,7 +684,7 @@ $base_search$
 | eval frameworks=if(isnull(frameworks),"Unmapped",frameworks)
 | eval capabilities=if(isnull(capabilities),"Unmapped",capabilities)
 | rename group_value as "Data Source" datamodel as Datamodel
-| table "Data Source" Datamodel mapping_state frameworks controls requirement_areas capabilities matched_fields governance_relevance mapping_confidence retention_importance tiering_recommendation searchable_retention_recommendation edge_processing_recommendation notes
+| table "Data Source" Datamodel mapping_state frameworks controls requirement_areas capabilities matched_fields governance_relevance mapping_confidence notes
 | sort "Data Source" mapping_state - matched_fields Datamodel
           ]]></query>
         </search>
