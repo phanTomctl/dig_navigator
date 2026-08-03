@@ -206,6 +206,91 @@ $base_search$
     ]]></query>
   </search>
 
+  <!-- Per-datamodel recommended-field completeness for Option B (% bars). -->
+  <search id="base_governance_recommended_dm" base="base_governance_field_evidence">
+    <query><![CDATA[
+| join type=left max=0 field_name datamodel [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
+    | eval datamodel=replace(datamodel," ","_")
+    | eval recommended=if(recommended="1" OR recommended=1 OR recommended="true",1,0)
+    | where recommended=1
+    | eval is_recommended=1
+    | fields datamodel field_name is_recommended
+]
+| where is_recommended=1
+| stats
+    dc(field_name) as observed_recommended
+    sum(field_instances) as field_instances
+    by datamodel
+| append [
+    | inputlookup datamodel_fields_lookup
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | eval datamodel=replace(datamodel," ","_")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="1" OR recommended=1 OR recommended="true",1,0)
+    | where recommended=1
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | stats dc(field_name) as total_recommended by datamodel
+    | eval catalog_row=1
+]
+| eventstats
+    values(observed_recommended) as observed_recommended
+    values(field_instances) as field_instances
+    by datamodel
+| where catalog_row=1
+| eval observed_recommended=coalesce(tonumber(observed_recommended),0)
+| eval total_recommended=tonumber(total_recommended)
+| eval dm_coverage_pct=if(total_recommended>0,round(100*observed_recommended/total_recommended,1),null())
+| fields datamodel observed_recommended total_recommended dm_coverage_pct field_instances
+    ]]></query>
+  </search>
+
+  <search id="base_governance_primary_controls" base="base_governance_recommended_dm">
+    <query><![CDATA[
+| fields datamodel dm_coverage_pct observed_recommended total_recommended
+| append [
+    | inputlookup governance_datamodel_mapping_lookup
+    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
+    | eval selected_framework_wrapped="|" . selected_framework . "|"
+    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
+    | eval selected_capability=if(len("$capability_filter$")=0,"*","$capability_filter$")
+    | eval selected_capability_wrapped="|" . selected_capability . "|"
+    | where selected_capability="*" OR like(selected_capability_wrapped,"%|*|%") OR like(selected_capability_wrapped,"%|" . capability . "|%")
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | eval datamodel=replace(datamodel," ","_")
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | where match(lower(governance_relevance),"^high")
+    | where datamodel!="Ticket_Management"
+    | eval map_row=1
+    | fields framework framework_version control_reference capability datamodel map_row
+]
+| eventstats
+    values(dm_coverage_pct) as dm_coverage_pct
+    values(observed_recommended) as observed_recommended
+    values(total_recommended) as total_recommended
+    by datamodel
+| where map_row=1
+| eval dm_coverage_pct=if(isnotnull(total_recommended),coalesce(tonumber(dm_coverage_pct),0),null())
+| stats
+    max(dm_coverage_pct) as control_coverage_pct
+    values(datamodel) as primary_datamodel
+    values(observed_recommended) as observed_recommended
+    values(total_recommended) as total_recommended
+    values(capability) as capability
+    by framework framework_version control_reference
+| where isnotnull(control_coverage_pct)
+| eval evidence_band=case(
+    control_coverage_pct>=70, "Good",
+    control_coverage_pct>0, "Partial",
+    true(), "None"
+)
+| fields framework framework_version control_reference capability primary_datamodel observed_recommended total_recommended control_coverage_pct evidence_band
+    ]]></query>
+  </search>
+
   <search id="base_governance_source_evidence" base="base_governance_field_evidence">
     <query><![CDATA[
 | eval datamodel_observed=1
@@ -237,11 +322,70 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance Information Nexus</div>
             <div class="devnull-subtitle">
-              Evidence view for framework coverage, governance capabilities, control mappings, datamodel alignment, confidence, and rationale.
+              Control-level recommended-field completeness for High-relevance mappings, plus capability and source evidence detail. Potential evidence only — not compliance.
             </div>
           </div>
         </div>
       </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Primary Control Evidence Completeness</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Average % of recommended CIM fields present for High-relevance (primary) controls in each framework.</p>
+              <p><strong>Why it matters:</strong> Complements the executive Good/Partial/None gap chart with a single completeness number per framework.</p>
+              <p><strong>Read it as:</strong> If a control maps to Authentication, the score is how many of Authentication’s recommended fields appear in this sample. Ticket_Management is excluded for now. Not a compliance score.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_governance_primary_controls">
+          <query><![CDATA[
+| stats avg(control_coverage_pct) as avg_control_pct dc(control_reference) as primary_controls by framework
+| eval avg_control_pct=round(avg_control_pct,1)
+| sort - avg_control_pct framework
+| table framework avg_control_pct
+          ]]></query>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Avg recommended-field %</option>
+        <option name="charting.axisTitleY.text">Framework</option>
+        <option name="charting.seriesColors">[#00e5ff]</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Primary Control Completeness Detail</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Each High-relevance primary control with its mapped datamodel, recommended-field hit rate, and Good/Partial/None band.</p>
+              <p><strong>Read it as:</strong> Use this to explain why a framework average is high or low. Potential evidence only.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <table>
+        <search base="base_governance_primary_controls">
+          <query><![CDATA[
+| eval recommended_hits=observed_recommended . " / " . total_recommended
+| rename framework as Framework control_reference as Control primary_datamodel as "Primary Datamodel" control_coverage_pct as "Recommended %" evidence_band as Band recommended_hits as "Recommended fields" capability as Capability
+| table Framework Control Capability "Primary Datamodel" "Recommended fields" "Recommended %" Band
+| sort Framework - "Recommended %" Control
+          ]]></query>
+        </search>
+        <option name="count">15</option>
+      </table>
     </panel>
   </row>
 

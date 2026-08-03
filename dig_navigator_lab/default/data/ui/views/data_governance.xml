@@ -93,25 +93,84 @@ $base_search$
     <latest>$time_range.latest$</latest>
   </search>
 
-  <search id="base_governance_matches" base="base_governance_field_evidence">
+  <!-- Per-datamodel: % of CIM recommended fields present in the sample. -->
+  <search id="base_governance_recommended_dm" base="base_governance_field_evidence">
     <query><![CDATA[
-| join type=left max=0 field_name [
+| join type=left max=0 field_name datamodel [
     | inputlookup datamodel_fields_lookup
     | eval field_name=lower(trim(field_name))
-    | stats dc(datamodel) as dm_count by field_name
+    | eval datamodel=replace(datamodel," ","_")
+    | eval recommended=if(recommended="1" OR recommended=1 OR recommended="true",1,0)
+    | where recommended=1
+    | eval is_recommended=1
+    | fields datamodel field_name is_recommended
 ]
-| eval is_distinctive=if(isnotnull(dm_count) AND tonumber(dm_count)<=3,1,0)
+| where is_recommended=1
 | stats
+    dc(field_name) as observed_recommended
     sum(field_instances) as field_instances
-    dc(field_name) as matched_fields
-    max(is_distinctive) as has_distinctive
-    values(field_name) as matched_field_names
-    dc(group_value) as group_count
-    values(group_value) as groups
     by datamodel
-| eval datamodel_observed=1
-| eval evidence_strength=if(has_distinctive=1,"strong","weak")
-| fields datamodel datamodel_observed evidence_strength matched_fields field_instances matched_field_names group_count groups
+| append [
+    | inputlookup datamodel_fields_lookup
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | eval datamodel=replace(datamodel," ","_")
+    | eval field_name=lower(trim(field_name))
+    | eval recommended=if(recommended="1" OR recommended=1 OR recommended="true",1,0)
+    | where recommended=1
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | stats dc(field_name) as total_recommended by datamodel
+    | eval catalog_row=1
+]
+| eventstats
+    values(observed_recommended) as observed_recommended
+    values(field_instances) as field_instances
+    by datamodel
+| where catalog_row=1
+| eval observed_recommended=coalesce(tonumber(observed_recommended),0)
+| eval total_recommended=tonumber(total_recommended)
+| eval dm_coverage_pct=if(total_recommended>0,round(100*observed_recommended/total_recommended,1),null())
+| fields datamodel observed_recommended total_recommended dm_coverage_pct field_instances
+    ]]></query>
+  </search>
+
+  <!-- High-relevance primary control scores (Ticket_Management excluded until catalog/mapping is ready). -->
+  <search id="base_governance_primary_controls" base="base_governance_recommended_dm">
+    <query><![CDATA[
+| fields datamodel dm_coverage_pct observed_recommended total_recommended
+| append [
+    | inputlookup governance_datamodel_mapping_lookup
+    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
+    | eval selected_framework_wrapped="|" . selected_framework . "|"
+    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
+    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
+    | eval selected_dm_wrapped="|" . selected_dm . "|"
+    | eval datamodel=replace(datamodel," ","_")
+    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
+    | where match(lower(governance_relevance),"^high")
+    | where datamodel!="Ticket_Management"
+    | eval map_row=1
+    | fields framework framework_version control_reference capability datamodel map_row
+]
+| eventstats
+    values(dm_coverage_pct) as dm_coverage_pct
+    values(observed_recommended) as observed_recommended
+    values(total_recommended) as total_recommended
+    by datamodel
+| where map_row=1
+| eval dm_coverage_pct=if(isnotnull(total_recommended),coalesce(tonumber(dm_coverage_pct),0),null())
+| stats
+    max(dm_coverage_pct) as control_coverage_pct
+    values(datamodel) as primary_datamodel
+    values(capability) as capability
+    by framework framework_version control_reference
+| where isnotnull(control_coverage_pct)
+| eval evidence_band=case(
+    control_coverage_pct>=70, "Good",
+    control_coverage_pct>0, "Partial",
+    true(), "None"
+)
+| fields framework framework_version control_reference capability primary_datamodel control_coverage_pct evidence_band
     ]]></query>
   </search>
 
@@ -133,7 +192,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance</div>
             <div class="devnull-subtitle">
-              Potential telemetry evidence against governance-mapped CIM datamodels — control gaps, not compliance scores.
+              Potential evidence completeness for High-relevance mapped datamodels — recommended CIM fields present in scope, not compliance scores.
             </div>
           </div>
         </div>
@@ -149,48 +208,30 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Mapped controls per framework, stacked by evidence quality in the selected sample — strong (distinctive CIM fields), weak/shared-only, or no usable evidence.</p>
-              <p><strong>Why it matters:</strong> Governance is not a single coverage percentage. This shows where telemetry may support mapped requirements versus where evidence is only shared fields or missing.</p>
-              <p><strong>Read it as:</strong> Potential evidence gaps, not compliance. Strong means at least one mapped datamodel has fields uncommon across CIM models. Weak means only shared fields (e.g. dest/user) lit the mapping. Drill into Governance IN for control detail.</p>
+              <p><strong>What this shows:</strong> High-relevance (primary) controls per framework, stacked by how complete the mapped datamodel’s recommended CIM fields are in the selected sample.</p>
+              <p><strong>Why it matters:</strong> Most controls point at a primary datamodel (for example Authentication). Recommended fields are the minimum set that datamodel expects to be useful — so this is a practical “do we have the right shape of evidence?” view.</p>
+              <p><strong>Read it as:</strong> Good = ≥70% of recommended fields present; Partial = some; None = none. Potential evidence gaps only — not compliance. Ticket_Management mappings are excluded for now. Open Governance IN for average completeness % and control detail.</p>
             </div>
           </details>
         </div>
       </html>
       <chart>
-        <search base="base_governance_matches">
+        <search base="base_governance_primary_controls">
           <query><![CDATA[
-| fields datamodel evidence_strength matched_fields
-| append [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
-    | eval selected_framework_wrapped="|" . selected_framework . "|"
-    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval mapping_row=1
-    | fields framework control_reference capability datamodel mapping_row
-]
-| eventstats values(evidence_strength) as evidence_strength by datamodel
-| where mapping_row=1
-| eval evidence_strength=coalesce(evidence_strength,"none")
-| eval strength_rank=case(evidence_strength="strong",3,evidence_strength="weak",2,true(),1)
-| stats max(strength_rank) as best_rank by framework control_reference
-| eval control_evidence=case(best_rank=3,"Strong evidence",best_rank=2,"Weak / shared-only",true(),"No usable evidence")
-| chart count over framework by control_evidence
-| fillnull value=0 "Strong evidence" "Weak / shared-only" "No usable evidence"
-| table framework "Strong evidence" "Weak / shared-only" "No usable evidence"
+| chart count over framework by evidence_band
+| fillnull value=0 Good Partial None
+| table framework Good Partial None
 | sort framework
           ]]></query>
         </search>
         <option name="charting.chart">bar</option>
         <option name="charting.chart.stackMode">stacked</option>
         <option name="charting.legend.placement">bottom</option>
-        <option name="charting.axisTitleX.text">Mapped controls</option>
+        <option name="charting.axisTitleX.text">Primary controls</option>
         <option name="charting.axisTitleY.text">Framework</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value2|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value2|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -202,36 +243,18 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> All mapped controls in scope, grouped by evidence quality (strong / weak shared-only / none).</p>
-              <p><strong>Why it matters:</strong> Shows how much of the governance map has distinctive telemetry evidence versus shared-field noise or gaps.</p>
+              <p><strong>What this shows:</strong> All High-relevance primary controls in scope, grouped by recommended-field completeness band (Good / Partial / None).</p>
+              <p><strong>Why it matters:</strong> Shows how much of the primary governance map has a usable CIM field footprint versus partial or missing evidence.</p>
               <p><strong>Read it as:</strong> Potential evidence mix only — not compliance status or control effectiveness.</p>
             </div>
           </details>
         </div>
       </html>
       <chart>
-        <search base="base_governance_matches">
+        <search base="base_governance_primary_controls">
           <query><![CDATA[
-| fields datamodel evidence_strength
-| append [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
-    | eval selected_framework_wrapped="|" . selected_framework . "|"
-    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval mapping_row=1
-    | fields framework control_reference datamodel mapping_row
-]
-| eventstats values(evidence_strength) as evidence_strength by datamodel
-| where mapping_row=1
-| eval evidence_strength=coalesce(evidence_strength,"none")
-| eval strength_rank=case(evidence_strength="strong",3,evidence_strength="weak",2,true(),1)
-| stats max(strength_rank) as best_rank by framework control_reference
-| eval control_evidence=case(best_rank=3,"Strong evidence",best_rank=2,"Weak / shared-only",true(),"No usable evidence")
-| stats count as controls by control_evidence
-| sort control_evidence
+| stats count as controls by evidence_band
+| sort evidence_band
           ]]></query>
         </search>
         <option name="charting.chart">pie</option>
@@ -240,7 +263,7 @@ $base_search$
         <option name="charting.chart.showLabels">1</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -254,51 +277,34 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Per-framework counts of mapped controls with strong, weak/shared-only, or no usable telemetry evidence.</p>
-              <p><strong>Why it matters:</strong> Connects the stacked gap view to control and datamodel counts for drill-down.</p>
+              <p><strong>What this shows:</strong> Per-framework counts of High-relevance primary controls in each completeness band, plus average recommended-field %.</p>
+              <p><strong>Why it matters:</strong> Connects the stacked gap view to control counts and a single completeness number for drill-down into Governance IN.</p>
               <p><strong>Read it as:</strong> Potential evidence summary only — not framework compliance or audit assurance.</p>
             </div>
           </details>
         </div>
       </html>
       <table>
-        <search base="base_governance_matches">
+        <search base="base_governance_primary_controls">
           <query><![CDATA[
-| fields datamodel evidence_strength matched_fields
-| append [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
-    | eval selected_framework_wrapped="|" . selected_framework . "|"
-    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | eval selected_dm=if(len("$datamodel_filter$")=0,"*","$datamodel_filter$")
-    | eval selected_dm_wrapped="|" . selected_dm . "|"
-    | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | eval mapping_row=1
-    | fields framework framework_version control_reference capability datamodel mapping_row
-]
-| eventstats values(evidence_strength) as evidence_strength by datamodel
-| where mapping_row=1
-| eval evidence_strength=coalesce(evidence_strength,"none")
-| eval strength_rank=case(evidence_strength="strong",3,evidence_strength="weak",2,true(),1)
-| eventstats max(strength_rank) as best_rank by framework control_reference
-| eval control_evidence=case(best_rank=3,"Strong evidence",best_rank=2,"Weak / shared-only",true(),"No usable evidence")
 | stats
     dc(control_reference) as mapped_controls
-    dc(eval(if(control_evidence="Strong evidence",control_reference,null()))) as strong_controls
-    dc(eval(if(control_evidence="Weak / shared-only",control_reference,null()))) as weak_controls
-    dc(eval(if(control_evidence="No usable evidence",control_reference,null()))) as none_controls
+    dc(eval(if(evidence_band="Good",control_reference,null()))) as good_controls
+    dc(eval(if(evidence_band="Partial",control_reference,null()))) as partial_controls
+    dc(eval(if(evidence_band="None",control_reference,null()))) as none_controls
+    avg(control_coverage_pct) as avg_coverage_pct
     dc(capability) as mapped_capabilities
-    dc(datamodel) as mapped_datamodels
-    dc(eval(if(evidence_strength!="none",datamodel,null()))) as evidenced_datamodels
+    dc(primary_datamodel) as primary_datamodels
     by framework framework_version
-| rename framework as Framework framework_version as Version mapped_controls as "Mapped Controls" strong_controls as "Strong evidence" weak_controls as "Weak / shared-only" none_controls as "No usable evidence" mapped_capabilities as "Mapped Capabilities" mapped_datamodels as "Mapped Datamodels" evidenced_datamodels as "Datamodels with evidence"
-| table Framework Version "Mapped Controls" "Strong evidence" "Weak / shared-only" "No usable evidence" "Mapped Capabilities" "Mapped Datamodels" "Datamodels with evidence"
-| sort - "Strong evidence" Framework
+| eval avg_coverage_pct=round(avg_coverage_pct,1)
+| rename framework as Framework framework_version as Version mapped_controls as "Primary Controls" good_controls as Good partial_controls as Partial none_controls as None avg_coverage_pct as "Avg recommended %" mapped_capabilities as "Mapped Capabilities" primary_datamodels as "Primary Datamodels"
+| table Framework Version "Primary Controls" Good Partial None "Avg recommended %" "Mapped Capabilities" "Primary Datamodels"
+| sort - Good Framework
           ]]></query>
         </search>
         <option name="count">20</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
       </table>
     </panel>
