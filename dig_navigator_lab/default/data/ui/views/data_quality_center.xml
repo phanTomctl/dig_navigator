@@ -50,7 +50,8 @@ $base_search$
 
   </fieldset>
 
-  <search id="base_quality_field_evidence">
+  <!-- Same sample base as Data Intelligence so CIM Alignment uses identical fielddiscovery (fieldsummary). -->
+  <search id="base_sample">
     <query><![CDATA[
 $base_search$
 | head $sample_limit$
@@ -59,6 +60,14 @@ $base_search$
 | eval selected_group=if(len("$selected_group$")=0,"*","$selected_group$")
 | eval selected_group_wrapped="|" . selected_group . "|"
 | where selected_group="*" OR like(selected_group_wrapped,"%|*|%") OR like(selected_group_wrapped,"%|" . group_value . "|%")
+| fields group_value _raw _time _indextime index host source sourcetype tag *
+    ]]></query>
+    <earliest>$time_range.earliest$</earliest>
+    <latest>$time_range.latest$</latest>
+  </search>
+
+  <search id="base_quality_field_evidence" base="base_sample">
+    <query><![CDATA[
 
 | eval is_json=if(match(_raw,"^\s*[\{\[]"),1,0)
 | eval is_xml=if(match(_raw,"^\s*<[^>]+>"),1,0)
@@ -199,16 +208,22 @@ $base_search$
     ]]></query>
   </search>
 
-  <search id="tile_quality_cim" base="base_quality_field_evidence">
+  <!-- Identical CIM Alignment math as Data Intelligence tile_cim_alignment
+       (fieldsummary + recommended/required scope). Quality IN has no Field scope /
+       Datamodel filter inputs, so those are fixed to recommended + all models. -->
+  <search id="tile_quality_cim" base="base_sample">
     <query><![CDATA[
-| stats max(field_instances) as field_instances by field_name
+| fieldsummary maxvals=1
+| rename field as field_name
 | eval field_name=lower(trim(field_name))
+| where NOT match(field_name,"^_")
+| where NOT match(field_name,"^(host|source|sourcetype|index|splunk_server|splunk_server_group|linecount|punct|eventtype|constraint|group_value|tag)$")
 | eval in_sample=1
 | fields field_name in_sample
 | append [
     | inputlookup datamodel_fields_lookup
-    | eval field_name=lower(trim(field_name))
     | eval datamodel=trim(datamodel)
+    | eval field_name=lower(trim(field_name))
     | eval recommended=if(recommended="true" OR recommended=1,1,0)
     | eval required=if(required="true" OR required=1,1,0)
     | eval scope_field=if(recommended=1 OR required=1,1,0)
