@@ -313,76 +313,15 @@ $base_search$
 
   <row>
     <panel>
-      <title>Governance Relevance</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> How strongly each data source aligns with governance-mapped datamodels in the selected framework scope.</p>
-              <p><strong>Why it matters:</strong> Source-level relevance helps show where the telemetry evidence behind governance coverage is coming from.</p>
-              <p><strong>Read it as:</strong> This is a relevance indicator based on observed datamodel and governance mapping evidence. It does not mean the source is approved, compliant or required for retention.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_group_matches">
-          <query><![CDATA[
-| mvexpand datamodels
-| rename datamodels as datamodel
-| join type=left max=0 datamodel [
-    | inputlookup governance_datamodel_mapping_lookup
-    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
-    | eval selected_framework_wrapped="|" . selected_framework . "|"
-    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
-    | fields framework datamodel governance_relevance mapping_confidence
-]
-| eval governance_mapped=if(isnotnull(framework),1,0)
-| stats
-    dc(field_name) as matched_dm_fields
-    dc(datamodel) as matched_datamodel_count
-    values(governance_relevance) as relevance_values
-    values(mapping_confidence) as confidence_values
-    max(governance_mapped) as governance_mapped
-    by group_value
-| eval high_relevance=if(mvfind(relevance_values,"High")>=0 OR mvfind(relevance_values,"Medium-High")>=0,1,0)
-| eval high_confidence=if(mvfind(confidence_values,"High")>=0,1,0)
-| eval medium_confidence=if(mvfind(confidence_values,"Medium")>=0,1,0)
-| eval governance_relevance=case(
-    governance_mapped=0, "Unmapped",
-    high_relevance=1 AND high_confidence=1 AND matched_datamodel_count>=2, "High",
-    high_relevance=1 OR high_confidence=1, "Medium-High",
-    medium_confidence=1, "Medium",
-    true(), "Low"
-)
-| stats count by governance_relevance
-          ]]></query>
-        </search>
-        <option name="charting.chart">pie</option>
-        <option name="charting.legend.placement">bottom</option>
-        <option name="charting.chart.showPercent">1</option>
-        <option name="charting.chart.showLabels">1</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
-        <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=$click.value|u$]]></link>
-        </drilldown>
-      </chart>
-    </panel>
-
-  </row>
-
-  <row>
-        <panel>
       <title>Source Governance Evidence Summary</title>
       <html>
         <div class="context-toggle">
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Per data source: governance relevance, High-relevance datamodels with the strongest field evidence, and counts of primary / supporting / unmapped datamodels.</p>
-              <p><strong>Why it matters:</strong> Shows which sources contribute potential governance evidence without prescribing retention, tiering, or edge-processing policy.</p>
-              <p><strong>Read it as:</strong> Potential evidence summary from configured mappings and observed CIM fields. Drill into Governance IN for full mapping detail.</p>
+              <p><strong>What this shows:</strong> For each data source, how strongly it aligns to governance mappings, which High-relevance datamodels have the most field evidence, and how the observed CIM models split between high-relevance, supporting, and unmapped.</p>
+              <p><strong>Why it matters:</strong> This is the source-level view behind the framework charts: which telemetry is carrying the potential evidence.</p>
+              <p><strong>Read it as:</strong> Numbers in brackets are matched CIM fields for that datamodel. Potential evidence only, not compliance. Drill into Governance IN for control-level detail.</p>
             </div>
           </details>
         </div>
@@ -406,21 +345,24 @@ $base_search$
     | stats dc(field_name) as dm_field_hits by group_value datamodel
     | sort group_value - dm_field_hits
     | streamstats count as dm_rank by group_value
-    | where dm_rank<=5
-    | eval top_item=datamodel . " (" . dm_field_hits . ")"
-    | stats values(top_item) as top_primary_datamodels by group_value
+    | where dm_rank<=3
+    | eval top_item=datamodel . " (" . dm_field_hits . " fields)"
+    | stats list(top_item) as strongest_evidence_mv by group_value
+    | eval strongest_evidence=mvjoin(strongest_evidence_mv, "; ")
+    | fields group_value strongest_evidence
     | eval top_pipe=1
 ]
-| eventstats values(top_primary_datamodels) as top_primary_datamodels by group_value
+| eventstats values(strongest_evidence) as strongest_evidence by group_value
 | where isnull(top_pipe)
 | stats
     dc(field_name) as matched_dm_fields
     dc(datamodel) as matched_datamodel_count
     dc(eval(if(governance_mapped=1,framework,null()))) as framework_count
-    dc(eval(if(is_primary_dm=1,datamodel,null()))) as primary_dm_count
+    values(eval(if(governance_mapped=1,framework,null()))) as mapped_frameworks
+    dc(eval(if(is_primary_dm=1,datamodel,null()))) as high_relevance_dm_count
     dc(eval(if(governance_mapped=1 AND is_primary_dm=0,datamodel,null()))) as supporting_dm_count
     dc(eval(if(governance_mapped=0,datamodel,null()))) as unmapped_dm_count
-    values(top_primary_datamodels) as top_primary_datamodels
+    values(strongest_evidence) as strongest_evidence
     values(governance_relevance) as relevance_values
     values(mapping_confidence) as confidence_values
     max(governance_mapped) as governance_mapped
@@ -435,22 +377,27 @@ $base_search$
     medium_confidence=1, "Medium",
     true(), "Low"
 )
-| eval top_primary_datamodels=if(isnull(top_primary_datamodels),"-",mvjoin(top_primary_datamodels,", "))
-| eval primary_dm_count=coalesce(primary_dm_count,0)
+| eval high_relevance_dm_count=coalesce(high_relevance_dm_count,0)
 | eval supporting_dm_count=coalesce(supporting_dm_count,0)
 | eval unmapped_dm_count=coalesce(unmapped_dm_count,0)
 | eval framework_count=coalesce(framework_count,0)
+| eval strongest_evidence=if(isnull(strongest_evidence),"-",strongest_evidence)
+| eval mapped_frameworks=if(isnull(mapped_frameworks),"None",mvjoin(mvsort(mapped_frameworks),"; "))
+| eval datamodel_footprint=high_relevance_dm_count . " high-relevance, " . supporting_dm_count . " supporting, " . unmapped_dm_count . " unmapped"
+| eval evidence_note=case(
+    governance_mapped=0, "CIM fields were observed, but none match the selected governance mappings.",
+    true(), "Strongest High-relevance field evidence listed first. Supporting models are mapped at Medium/Medium-High relevance."
+)
 | rename
     group_value as Source
-    governance_relevance as Relevance
-    top_primary_datamodels as "Top primary datamodels"
-    primary_dm_count as "Primary DMs"
-    supporting_dm_count as "Supporting DMs"
-    unmapped_dm_count as "Unmapped DMs"
-    matched_dm_fields as "CIM fields"
-    framework_count as Frameworks
-| table Source Relevance "Top primary datamodels" "Primary DMs" "Supporting DMs" "Unmapped DMs" "CIM fields" Frameworks
-| sort Relevance - "CIM fields" Source
+    governance_relevance as "Governance relevance"
+    strongest_evidence as "Strongest High-relevance evidence"
+    datamodel_footprint as "Observed datamodel footprint"
+    matched_dm_fields as "Matched CIM fields"
+    mapped_frameworks as "Mapped frameworks"
+    evidence_note as "How to read this row"
+| table Source "Governance relevance" "Strongest High-relevance evidence" "Observed datamodel footprint" "Matched CIM fields" "Mapped frameworks" "How to read this row"
+| sort "Governance relevance" - "Matched CIM fields" Source
           ]]></query>
         </search>
         <option name="count">15</option>
