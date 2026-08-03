@@ -1,2 +1,6 @@
 # Local Cursor config (rules, MCP) — keep on disk, not in the app
 .cursor/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
