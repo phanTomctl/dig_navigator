@@ -243,9 +243,9 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> All High-relevance primary controls in scope, grouped by recommended-field completeness band (Good / Partial / None).</p>
+              <p><strong>What this shows:</strong> All High-relevance controls in scope, grouped by recommended-field completeness band (Good / Partial / None).</p>
               <p><strong>Why it matters:</strong> Shows how much of the primary governance map has a usable CIM field footprint versus partial or missing evidence.</p>
-              <p><strong>Read it as:</strong> Potential evidence mix only — not compliance status or control effectiveness.</p>
+              <p><strong>Read it as:</strong> Potential evidence mix only, not compliance status or control effectiveness.</p>
             </div>
           </details>
         </div>
