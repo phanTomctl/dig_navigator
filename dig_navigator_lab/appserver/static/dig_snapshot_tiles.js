@@ -13,8 +13,9 @@
 require([
     "jquery",
     "splunkjs/mvc",
+    "splunkjs/mvc/utils",
     "splunkjs/mvc/simplexml/ready!"
-], function($, mvc) {
+], function($, mvc, utils) {
     "use strict";
 
     /*
@@ -31,16 +32,31 @@ require([
         cardinality: { green: 70, amber: 40 }
     };
 
+    /* Row 1 then row 2 of the 4x2 Snapshot grid */
     var TILE_ORDER = [
-        "structure",
-        "consistency",
+        "datamodel_alignment",
         "cim_alignment",
         "parsing_quality",
         "cardinality",
-        "duplication",
         "delivery_lag",
-        "datamodel_alignment"
+        "duplication",
+        "structure",
+        "consistency"
     ];
+
+    var TILE_DRILLDOWNS = {
+        datamodel_alignment: "datamodel_center",
+        cim_alignment: "datamodel_center",
+        parsing_quality: "data_quality_center",
+        cardinality: "data_quality_center",
+        delivery_lag: "telemetry_timeliness_center",
+        duplication: "data_quality_center",
+        structure: "data_structure_center",
+        consistency: "data_structure_center"
+    };
+
+    var defaultTokens = mvc.Components.get("default");
+    var submittedTokens = mvc.Components.get("submitted");
 
     var state = {
         structure: null,
@@ -182,6 +198,73 @@ require([
         return null;
     }
 
+    function readToken(names, fallback) {
+        var i;
+        var value;
+        for (i = 0; i < names.length; i++) {
+            if (defaultTokens) {
+                value = defaultTokens.get(names[i]);
+                if (value !== undefined && value !== null && value !== "") {
+                    return value;
+                }
+            }
+            if (submittedTokens) {
+                value = submittedTokens.get(names[i]);
+                if (value !== undefined && value !== null && value !== "") {
+                    return value;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    function makeAppUrl(path) {
+        try {
+            if (utils && typeof utils.make_url === "function") {
+                return utils.make_url(path);
+            }
+        } catch (e) {}
+        return path;
+    }
+
+    function buildDrilldownUrl(viewName) {
+        var params = {
+            "form.base_search": readToken(["form.base_search", "base_search"], ""),
+            "form.time_range.earliest": readToken(["form.time_range.earliest", "time_range.earliest"], "-24h"),
+            "form.time_range.latest": readToken(["form.time_range.latest", "time_range.latest"], "now"),
+            "form.group_by": readToken(["form.group_by", "group_by"], "sourcetype"),
+            "form.sample_limit": readToken(["form.sample_limit", "sample_limit"], "1000"),
+            "form.selected_group": "*"
+        };
+
+        if (viewName === "datamodel_center") {
+            params["form.datamodel_filter"] = readToken(["form.datamodel_filter", "datamodel_filter"], "*");
+            params["form.field_scope"] = readToken(["form.field_scope", "field_scope"], "recommended");
+            params["form.dm_perspective"] = readToken(["form.dm_perspective", "dm_perspective"], "combined");
+        } else if (viewName === "data_quality_center") {
+            params["form.field_scope"] = readToken(["form.field_scope", "field_scope"], "recommended");
+        } else if (viewName === "data_structure_center") {
+            params["form.classification"] = "*";
+        } else if (viewName === "telemetry_timeliness_center") {
+            params["form.selected_delay_category"] = "*";
+            params["form.selected_timestamp_indicator"] = "*";
+        }
+
+        var qs = Object.keys(params).map(function(key) {
+            return encodeURIComponent(key) + "=" + encodeURIComponent(params[key] == null ? "" : String(params[key]));
+        }).join("&");
+
+        return makeAppUrl("/app/dig_navigator_lab/" + viewName + "?" + qs);
+    }
+
+    function openTileDrilldown(tileId) {
+        var viewName = TILE_DRILLDOWNS[tileId];
+        if (!viewName) {
+            return;
+        }
+        window.open(buildDrilldownUrl(viewName), "_blank");
+    }
+
     function bindSearch(id, handler) {
         var manager = mvc.Components.get(id);
         if (!manager) {
@@ -204,7 +287,12 @@ require([
 
     function renderTile(tile) {
         var band = tile.band || "pending";
-        var html = '<div class="dig-snapshot-tile is-' + band + '" data-tile="' + tile.id + '">';
+        var clickable = !!TILE_DRILLDOWNS[tile.id];
+        var html = '<div class="dig-snapshot-tile is-' + band +
+            (clickable ? " is-clickable" : "") +
+            '" data-tile="' + tile.id + '"' +
+            (clickable ? ' role="link" tabindex="0" title="Open related Information Nexus"' : "") +
+            ">";
         html += '<div class="dig-snapshot-tile-label">' + tile.label + "</div>";
         if (tile.dual) {
             html += '<div class="dig-snapshot-tile-dual">';
@@ -357,7 +445,7 @@ require([
         html += "<p><strong>Delivery lag:</strong> Average ingest delay (_indextime − _time) vs expected healthy lag from <em>telemetry_timeliness_rules</em>. Green = within expected. Amber = above expected. Red = future timestamps present.</p>";
         html += "<p><strong>Datamodel alignment:</strong> Count of CIM models with Current vs Potential field evidence in scope. Green when Current ≥ 1.</p>";
         html += "</div></details></div>";
-        html += '<p class="dig-snapshot-banner">Indicator strip for the selected analysis scope. Not a certification.</p>';
+        html += '<p class="dig-snapshot-banner">Indicator strip for the selected analysis scope. Not a certification. Click a tile to open the related Information Nexus with the current scope.</p>';
         html += '<div class="dig-snapshot-grid dig-snapshot-grid-8">';
         TILE_ORDER.forEach(function(id) {
             var tile = tiles.filter(function(t) { return t.id === id; })[0];
@@ -367,6 +455,15 @@ require([
         });
         html += "</div></div>";
         $root.html(html);
+
+        $root.find(".dig-snapshot-tile.is-clickable").on("click", function() {
+            openTileDrilldown($(this).attr("data-tile"));
+        }).on("keydown", function(e) {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openTileDrilldown($(this).attr("data-tile"));
+            }
+        });
     }
 
     bindSearch("tile_structure_consistency", function(row) {

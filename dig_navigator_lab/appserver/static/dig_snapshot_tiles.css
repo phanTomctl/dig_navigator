@@ -57,6 +57,22 @@
     overflow: hidden;
 }
 
+.dig-snapshot-tile.is-clickable {
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.dig-snapshot-tile.is-clickable:hover {
+    border-color: rgba(125, 255, 154, 0.45);
+    box-shadow: 0 0 22px rgba(125, 255, 154, 0.14);
+    transform: translateY(-1px);
+}
+
+.dig-snapshot-tile.is-clickable:focus {
+    outline: 1px solid #7dff9a;
+    outline-offset: 2px;
+}
+
 .dig-snapshot-tile::before {
     content: "";
     position: absolute;
