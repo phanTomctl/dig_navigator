@@ -95,14 +95,23 @@ $base_search$
 
   <search id="base_governance_matches" base="base_governance_field_evidence">
     <query><![CDATA[
+| join type=left max=0 field_name [
+    | inputlookup datamodel_fields_lookup
+    | eval field_name=lower(trim(field_name))
+    | stats dc(datamodel) as dm_count by field_name
+]
+| eval is_distinctive=if(isnotnull(dm_count) AND tonumber(dm_count)<=3,1,0)
 | stats
     sum(field_instances) as field_instances
     dc(field_name) as matched_fields
+    max(is_distinctive) as has_distinctive
     values(field_name) as matched_field_names
     dc(group_value) as group_count
     values(group_value) as groups
     by datamodel
 | eval datamodel_observed=1
+| eval evidence_strength=if(has_distinctive=1,"strong","weak")
+| fields datamodel datamodel_observed evidence_strength matched_fields field_instances matched_field_names group_count groups
     ]]></query>
   </search>
 
@@ -124,7 +133,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance</div>
             <div class="devnull-subtitle">
-              Framework coverage, governance capability alignment, and evidence-driven mapping from governance requirements to Splunk datamodels.
+              Potential telemetry evidence against governance-mapped CIM datamodels — control gaps, not compliance scores.
             </div>
           </div>
         </div>
@@ -140,9 +149,9 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Weighted coverage for each governance framework based on configured control mappings, governance capabilities and observed Splunk datamodel evidence.</p>
-              <p><strong>Why it matters:</strong> Framework Mapping Alignment provides an executive-level view of where selected telemetry appears to support governance-related requirements.</p>
-              <p><strong>Read it as:</strong> This is evidence of telemetry alignment to mapped governance requirements. It is not a formal compliance assessment, control test or attestation.</p>
+              <p><strong>What this shows:</strong> Mapped controls per framework, stacked by evidence quality in the selected sample — strong (distinctive CIM fields), weak/shared-only, or no usable evidence.</p>
+              <p><strong>Why it matters:</strong> Governance is not a single coverage percentage. This shows where telemetry may support mapped requirements versus where evidence is only shared fields or missing.</p>
+              <p><strong>Read it as:</strong> Potential evidence gaps, not compliance. Strong means at least one mapped datamodel has fields uncommon across CIM models. Weak means only shared fields (e.g. dest/user) lit the mapping. Drill into Governance IN for control detail.</p>
             </div>
           </details>
         </div>
@@ -150,7 +159,7 @@ $base_search$
       <chart>
         <search base="base_governance_matches">
           <query><![CDATA[
-| fields datamodel datamodel_observed matched_fields group_count
+| fields datamodel evidence_strength matched_fields
 | append [
     | inputlookup governance_datamodel_mapping_lookup
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
@@ -160,47 +169,42 @@ $base_search$
     | eval selected_dm_wrapped="|" . selected_dm . "|"
     | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
     | eval mapping_row=1
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence retention_importance mapping_row
+    | fields framework control_reference capability datamodel mapping_row
 ]
-| eventstats max(datamodel_observed) as datamodel_observed max(matched_fields) as matched_fields max(group_count) as group_count by datamodel
+| eventstats values(evidence_strength) as evidence_strength by datamodel
 | where mapping_row=1
-| eval datamodel_observed=coalesce(datamodel_observed,0)
-| eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
-| eval covered_weight=if(datamodel_observed=1,mapping_weight,0)
-| stats
-    sum(mapping_weight) as possible_weight
-    sum(covered_weight) as covered_weight
-    dc(control_reference) as mapped_controls
-    dc(capability) as mapped_capabilities
-    dc(datamodel) as mapped_datamodels
-    dc(eval(if(datamodel_observed=1,datamodel,null()))) as observed_datamodels
-    by framework
-| eval framework_coverage_pct=round((covered_weight/possible_weight)*100,1)
-| sort - framework_coverage_pct framework
-| table framework framework_coverage_pct
+| eval evidence_strength=coalesce(evidence_strength,"none")
+| eval strength_rank=case(evidence_strength="strong",3,evidence_strength="weak",2,true(),1)
+| stats max(strength_rank) as best_rank by framework control_reference
+| eval control_evidence=case(best_rank=3,"Strong evidence",best_rank=2,"Weak / shared-only",true(),"No usable evidence")
+| chart count over framework by control_evidence
+| fillnull value=0 "Strong evidence" "Weak / shared-only" "No usable evidence"
+| table framework "Strong evidence" "Weak / shared-only" "No usable evidence"
+| sort framework
           ]]></query>
         </search>
         <option name="charting.chart">bar</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Weighted coverage %</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisTitleX.text">Mapped controls</option>
         <option name="charting.axisTitleY.text">Framework</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <option name="charting.seriesColors">[#7dff9a,#ffc857,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value2|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
       </chart>
     </panel>
 
     <panel>
-      <title>Framework Alignment Distribution</title>
+      <title>Control Evidence Distribution</title>
       <html>
         <div class="context-toggle">
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Frameworks grouped into coverage bands based on the weighted evidence observed within the selected scope.</p>
-              <p><strong>Why it matters:</strong> Coverage bands help summarise where governance evidence appears stronger, partial or limited across the selected framework scope.</p>
-              <p><strong>Read it as:</strong> These bands describe observed evidence coverage only. They do not represent compliance status, governance maturity or control effectiveness.</p>
+              <p><strong>What this shows:</strong> All mapped controls in scope, grouped by evidence quality (strong / weak shared-only / none).</p>
+              <p><strong>Why it matters:</strong> Shows how much of the governance map has distinctive telemetry evidence versus shared-field noise or gaps.</p>
+              <p><strong>Read it as:</strong> Potential evidence mix only — not compliance status or control effectiveness.</p>
             </div>
           </details>
         </div>
@@ -208,7 +212,7 @@ $base_search$
       <chart>
         <search base="base_governance_matches">
           <query><![CDATA[
-| fields datamodel datamodel_observed matched_fields group_count
+| fields datamodel evidence_strength
 | append [
     | inputlookup governance_datamodel_mapping_lookup
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
@@ -218,24 +222,23 @@ $base_search$
     | eval selected_dm_wrapped="|" . selected_dm . "|"
     | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
     | eval mapping_row=1
-    | fields framework capability datamodel mapping_confidence mapping_row
+    | fields framework control_reference datamodel mapping_row
 ]
-| eventstats max(datamodel_observed) as datamodel_observed by datamodel
+| eventstats values(evidence_strength) as evidence_strength by datamodel
 | where mapping_row=1
-| eval datamodel_observed=coalesce(datamodel_observed,0)
-| eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
-| eval covered_weight=if(datamodel_observed=1,mapping_weight,0)
-| stats sum(mapping_weight) as possible_weight sum(covered_weight) as covered_weight by framework
-| eval framework_coverage_pct=round((covered_weight/possible_weight)*100,1)
-| eval coverage_status=case(framework_coverage_pct>=85,"Strong",framework_coverage_pct>=60,"Partial",framework_coverage_pct>0,"Limited",true(),"No observed coverage")
-| stats count as frameworks by coverage_status
+| eval evidence_strength=coalesce(evidence_strength,"none")
+| eval strength_rank=case(evidence_strength="strong",3,evidence_strength="weak",2,true(),1)
+| stats max(strength_rank) as best_rank by framework control_reference
+| eval control_evidence=case(best_rank=3,"Strong evidence",best_rank=2,"Weak / shared-only",true(),"No usable evidence")
+| stats count as controls by control_evidence
+| sort control_evidence
           ]]></query>
         </search>
         <option name="charting.chart">pie</option>
         <option name="charting.legend.placement">bottom</option>
         <option name="charting.chart.showPercent">1</option>
         <option name="charting.chart.showLabels">1</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <option name="charting.seriesColors">[#7dff9a,#ffc857,#ff6b6b]</option>
         <drilldown>
           <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
@@ -251,9 +254,9 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> A framework-level summary of mapped controls, capabilities, datamodels and observed datamodel evidence.</p>
-              <p><strong>Why it matters:</strong> This connects framework coverage back to the mapped evidence used to calculate it.</p>
-              <p><strong>Read it as:</strong> Higher coverage indicates more observed evidence against configured mappings. It should not be interpreted as framework compliance or audit assurance.</p>
+              <p><strong>What this shows:</strong> Per-framework counts of mapped controls with strong, weak/shared-only, or no usable telemetry evidence.</p>
+              <p><strong>Why it matters:</strong> Connects the stacked gap view to control and datamodel counts for drill-down.</p>
+              <p><strong>Read it as:</strong> Potential evidence summary only — not framework compliance or audit assurance.</p>
             </div>
           </details>
         </div>
@@ -261,7 +264,7 @@ $base_search$
       <table>
         <search base="base_governance_matches">
           <query><![CDATA[
-| fields datamodel datamodel_observed matched_fields group_count
+| fields datamodel evidence_strength matched_fields
 | append [
     | inputlookup governance_datamodel_mapping_lookup
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
@@ -271,30 +274,29 @@ $base_search$
     | eval selected_dm_wrapped="|" . selected_dm . "|"
     | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
     | eval mapping_row=1
-    | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence mapping_row
+    | fields framework framework_version control_reference capability datamodel mapping_row
 ]
-| eventstats max(datamodel_observed) as datamodel_observed max(matched_fields) as matched_fields max(group_count) as group_count by datamodel
+| eventstats values(evidence_strength) as evidence_strength by datamodel
 | where mapping_row=1
-| eval datamodel_observed=coalesce(datamodel_observed,0)
-| eval mapping_weight=case(mapping_confidence="High",1,mapping_confidence="Medium",0.75,mapping_confidence="Low",0.5,true(),0.75)
-| eval covered_weight=if(datamodel_observed=1,mapping_weight,0)
+| eval evidence_strength=coalesce(evidence_strength,"none")
+| eval strength_rank=case(evidence_strength="strong",3,evidence_strength="weak",2,true(),1)
+| eventstats max(strength_rank) as best_rank by framework control_reference
+| eval control_evidence=case(best_rank=3,"Strong evidence",best_rank=2,"Weak / shared-only",true(),"No usable evidence")
 | stats
-    sum(mapping_weight) as possible_weight
-    sum(covered_weight) as covered_weight
     dc(control_reference) as mapped_controls
+    dc(eval(if(control_evidence="Strong evidence",control_reference,null()))) as strong_controls
+    dc(eval(if(control_evidence="Weak / shared-only",control_reference,null()))) as weak_controls
+    dc(eval(if(control_evidence="No usable evidence",control_reference,null()))) as none_controls
     dc(capability) as mapped_capabilities
     dc(datamodel) as mapped_datamodels
-    dc(eval(if(datamodel_observed=1,datamodel,null()))) as observed_datamodels
-    values(eval(if(datamodel_observed=0,datamodel,null()))) as missing_datamodels
+    dc(eval(if(evidence_strength!="none",datamodel,null()))) as evidenced_datamodels
     by framework framework_version
-| eval framework_coverage_pct=round((covered_weight/possible_weight)*100,1)
-| eval coverage_status=case(framework_coverage_pct>=85,"Strong",framework_coverage_pct>=60,"Partial",framework_coverage_pct>0,"Limited",true(),"No observed coverage")
-| rename framework as Framework framework_version as Version framework_coverage_pct as "Framework Coverage %" coverage_status as Status mapped_controls as "Mapped Controls" mapped_capabilities as "Mapped Capabilities" mapped_datamodels as "Framework Datamodels" observed_datamodels as "Aligned Datamodels" missing_datamodels as "Potential Datamodels"
-| table Framework Version "Framework Coverage %" Status "Mapped Controls" "Mapped Capabilities" "Framework Datamodels" "Aligned Datamodels" "Potential Datamodels"
-| sort - "Framework Coverage %" Framework
+| rename framework as Framework framework_version as Version mapped_controls as "Mapped Controls" strong_controls as "Strong evidence" weak_controls as "Weak / shared-only" none_controls as "No usable evidence" mapped_capabilities as "Mapped Capabilities" mapped_datamodels as "Mapped Datamodels" evidenced_datamodels as "Datamodels with evidence"
+| table Framework Version "Mapped Controls" "Strong evidence" "Weak / shared-only" "No usable evidence" "Mapped Capabilities" "Mapped Datamodels" "Datamodels with evidence"
+| sort - "Strong evidence" Framework
           ]]></query>
         </search>
-        <option name="count">10</option>
+        <option name="count">20</option>
         <drilldown>
           <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*&form.tier_filter=*&form.retention_filter=*]]></link>
         </drilldown>
