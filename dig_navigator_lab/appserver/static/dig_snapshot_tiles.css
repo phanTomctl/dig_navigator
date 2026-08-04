@@ -31,6 +31,15 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* Governance: 2 wide tiles over 4 band tiles */
+.dig-snapshot-grid.dig-snapshot-grid-gov {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dig-snapshot-grid.dig-snapshot-grid-gov .dig-snapshot-tile.is-wide {
+    grid-column: span 2;
+}
+
 @media (max-width: 1200px) {
     .dig-snapshot-grid,
     .dig-snapshot-grid.dig-snapshot-grid-8 {
@@ -41,7 +50,8 @@
 @media (max-width: 800px) {
     .dig-snapshot-grid,
     .dig-snapshot-grid.dig-snapshot-grid-6,
-    .dig-snapshot-grid.dig-snapshot-grid-8 {
+    .dig-snapshot-grid.dig-snapshot-grid-8,
+    .dig-snapshot-grid.dig-snapshot-grid-gov {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }

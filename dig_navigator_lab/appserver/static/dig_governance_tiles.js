@@ -21,12 +21,17 @@ require([
 
     var TILE_ORDER = [
         "primary_controls",
+        "avg_coverage",
         "good_coverage",
         "partial_coverage",
         "low_coverage",
-        "no_coverage",
-        "avg_coverage"
+        "no_coverage"
     ];
+
+    var WIDE_TILES = {
+        primary_controls: true,
+        avg_coverage: true
+    };
 
     var state = {
         summary: null
@@ -162,7 +167,8 @@ require([
 
     function renderTile(tile) {
         var band = tile.band || "pending";
-        var html = '<div class="dig-snapshot-tile is-' + band + '" data-tile="' + tile.id + '">';
+        var wideClass = WIDE_TILES[tile.id] ? " is-wide" : "";
+        var html = '<div class="dig-snapshot-tile is-' + band + wideClass + '" data-tile="' + tile.id + '">';
         html += '<div class="dig-snapshot-tile-label">' + tile.label + "</div>";
         html += '<div class="dig-snapshot-tile-value">' + (tile.value || "-") + "</div>";
         html += '<div class="dig-snapshot-tile-sub">' + (tile.sub || "") + "</div>";
@@ -247,7 +253,7 @@ require([
         html += "<p><strong>Field Coverage:</strong> Average recommended-field % across those primary controls. Matched datamodels are primaries with coverage greater than 0%.</p>";
         html += "</div></details></div>";
         html += '<p class="dig-snapshot-banner">Governance evidence strip for the selected sample. Not a compliance score.</p>';
-        html += '<div class="dig-snapshot-grid dig-snapshot-grid-6">';
+        html += '<div class="dig-snapshot-grid dig-snapshot-grid-gov">';
         TILE_ORDER.forEach(function(id) {
             var tile = tiles.filter(function(t) { return t.id === id; })[0];
             if (tile) {
