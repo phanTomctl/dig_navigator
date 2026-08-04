@@ -386,18 +386,13 @@ $base_search$
 | eval strongest_evidence=if(isnull(strongest_evidence) OR strongest_evidence="", "-", strongest_evidence)
 | eval mapped_frameworks=if(isnull(mapped_frameworks),"None",mvjoin(mvsort(mapped_frameworks),"; "))
 | eval datamodel_footprint=high_relevance_dm_count . " primary, " . supporting_dm_count . " supporting, " . unmapped_dm_count . " unmapped"
-| eval evidence_note=case(
-    governance_mapped=0, "CIM fields were observed, but none match the selected governance mappings.",
-    true(), "Strongest primary (High-relevance) field evidence listed first. Supporting models are Medium or Medium-High."
-)
 | rename
     group_value as Source
     strongest_evidence as "Strongest primary evidence"
     datamodel_footprint as "Observed datamodel footprint"
     matched_dm_fields as "Matched CIM fields"
     mapped_frameworks as "Mapped frameworks"
-    evidence_note as "How to read this row"
-| table Source "Strongest primary evidence" "Observed datamodel footprint" "Matched CIM fields" "Mapped frameworks" "How to read this row"
+| table Source "Strongest primary evidence" "Observed datamodel footprint" "Matched CIM fields" "Mapped frameworks"
 | sort - "Matched CIM fields" Source
           ]]></query>
         </search>
@@ -435,7 +430,7 @@ $base_search$
           <query><![CDATA[
 | mvexpand datamodels
 | rename datamodels as datamodel
-| stats dc(field_name) as matched_dm_fields by group_value datamodel
+| stats values(field_name) as matched_fields by group_value datamodel
 | join type=inner max=0 datamodel [
     | inputlookup governance_datamodel_mapping_lookup
     | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
@@ -444,7 +439,7 @@ $base_search$
     | fields framework framework_version control_reference requirement_area capability datamodel governance_relevance mapping_confidence mapping_rationale source_terms source_url notes
 ]
 | stats
-    first(matched_dm_fields) as matched_dm_fields
+    first(matched_fields) as matched_fields
     values(requirement_area) as requirement_areas
     values(capability) as capabilities
     values(governance_relevance) as governance_relevance
@@ -454,8 +449,9 @@ $base_search$
     values(source_url) as source_url
     values(notes) as notes
     by group_value framework framework_version datamodel
-| rename group_value as grouping framework as Framework framework_version as Version datamodel as Datamodel matched_dm_fields as "Matched DM Fields" requirement_areas as "Requirement Areas" capabilities as Capabilities governance_relevance as Relevance mapping_confidence as Confidence source_terms as "Source Terms" mapping_rationale as Rationale source_url as "Source URL"
-| table grouping Framework Version Datamodel "Requirement Areas" Capabilities Relevance Confidence "Matched DM Fields" "Source Terms" Rationale "Source URL" notes
+| eval matched_fields=mvsort(matched_fields)
+| rename group_value as grouping framework as Framework framework_version as Version datamodel as Datamodel matched_fields as "Matched Fields" requirement_areas as "Requirement Areas" capabilities as Capabilities governance_relevance as Relevance mapping_confidence as Confidence source_terms as "Source Terms" mapping_rationale as Rationale source_url as "Source URL"
+| table grouping Framework Version Datamodel "Requirement Areas" Capabilities Relevance Confidence "Matched Fields" "Source Terms" Rationale "Source URL" notes
 | sort grouping Framework Datamodel
           ]]></query>
         </search>
