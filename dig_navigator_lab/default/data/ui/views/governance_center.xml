@@ -1,4 +1,4 @@
-<dashboard script="dig_analysis_scope_kv.js" version="1.1" stylesheet="devnull.css">
+<dashboard script="dig_analysis_scope_kv.js,dig_governance_tiles.js" version="1.1" stylesheet="devnull.css,dig_snapshot_tiles.css">
   <label>Data Governance IN</label>
 
   <fieldset submitButton="false" autoRun="false">
@@ -274,6 +274,22 @@ $base_search$
     ]]></query>
   </search>
 
+  <search id="tile_governance_summary" base="base_governance_primary_controls">
+    <query><![CDATA[
+| stats
+    dc(control_reference) as primary_controls
+    dc(eval(if(evidence_band="Good Coverage",control_reference,null()))) as good_controls
+    dc(eval(if(evidence_band="Partial Coverage",control_reference,null()))) as partial_controls
+    dc(eval(if(evidence_band="Low Coverage",control_reference,null()))) as low_controls
+    dc(eval(if(evidence_band="No Coverage",control_reference,null()))) as none_controls
+    avg(control_coverage_pct) as avg_coverage_pct
+    dc(eval(if(control_coverage_pct>0,primary_datamodel,null()))) as matched_datamodels
+    dc(framework) as frameworks
+| eval avg_coverage_pct=round(avg_coverage_pct,1)
+| fields primary_controls good_controls partial_controls low_controls none_controls avg_coverage_pct matched_datamodels frameworks
+    ]]></query>
+  </search>
+
   <search id="base_governance_source_evidence" base="base_governance_field_evidence">
     <query><![CDATA[
 | eval datamodel_observed=1
@@ -307,6 +323,15 @@ $base_search$
             </div>
           </div>
         </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Governance Evidence Summary</title>
+      <html>
+        <div id="dig-governance-summary-tiles"></div>
       </html>
     </panel>
   </row>
