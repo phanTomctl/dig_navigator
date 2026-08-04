@@ -8,6 +8,7 @@
     <view name="governance_center" label="Governance IN" />
     <view name="data_quality_center" label="Quality IN" />
     <view name="telemetry_timeliness_center" label="Delivery IN" />
+    <view name="ingest_path_lab" label="Ingest Path Lab" />
   </collection>
 
   <view name="configuration" label="Configuration" />
