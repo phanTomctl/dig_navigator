@@ -303,7 +303,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance Information Nexus</div>
             <div class="devnull-subtitle">
-              Control-level recommended-field completeness for High-relevance mappings, plus capability and source evidence detail. Potential evidence only, not compliance.
+              Control-level recommended-field completeness, mapping explainability, and source evidence detail. Potential evidence only, not compliance.
             </div>
           </div>
         </div>
@@ -312,37 +312,6 @@ $base_search$
   </row>
 
   <row>
-    <panel>
-      <title>Primary Control Evidence Completeness</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Average % of recommended CIM fields present for High-relevance (primary) controls in each framework.</p>
-              <p><strong>Why it matters:</strong> Complements the executive Good / Partial / Low / No Coverage gap chart with a single completeness number per framework.</p>
-              <p><strong>Read it as:</strong> If a control maps to Authentication, the score is how many of Authentication’s recommended fields appear in this sample. Ticket_Management is excluded for now. Not a compliance score.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_primary_controls">
-          <query><![CDATA[
-| stats avg(control_coverage_pct) as avg_control_pct dc(control_reference) as primary_controls by framework
-| eval avg_control_pct=round(avg_control_pct,1)
-| sort - avg_control_pct framework
-| table framework avg_control_pct
-          ]]></query>
-        </search>
-        <option name="charting.chart">bar</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Recommended Field Coverage</option>
-        <option name="charting.axisTitleY.text">Framework</option>
-        <option name="charting.seriesColors">[#00e5ff]</option>
-      </chart>
-    </panel>
-
     <panel>
       <title>Primary Control Completeness Detail</title>
       <html>
@@ -367,65 +336,6 @@ $base_search$
         </search>
         <option name="count">15</option>
       </table>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Capability Evidence Alignment</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Weighted coverage by governance capability.</p>
-              <p><strong>How to use it:</strong> Use this to see why a framework is strong or weak, then review missing datamodels and control mappings below.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_center">
-          <query><![CDATA[
-| stats sum(mapping_weight) as possible_weight sum(covered_weight) as covered_weight dc(control_reference) as controls dc(datamodel) as datamodels dc(eval(if(datamodel_observed=1,datamodel,null()))) as observed_datamodels by capability
-| eval capability_coverage_pct=round((covered_weight/possible_weight)*100,1)
-| sort - capability_coverage_pct capability
-| table capability capability_coverage_pct
-          ]]></query>
-        </search>
-        <option name="charting.chart">bar</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Weighted coverage %</option>
-        <option name="charting.axisTitleY.text">Capability</option>
-        <option name="charting.seriesColors">[#00e5ff]</option>
-      </chart>
-    </panel>
-
-    <panel>
-      <title> Observed vs Missing Datamodel Evidence</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Whether the datamodels required by the selected framework/capability mappings were observed in the selected data.</p>
-              <p><strong>Read it as:</strong> Missing means the mapping exists but no supporting datamodel evidence was found in the selected search scope and time range.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_center">
-          <query><![CDATA[
-| stats dc(datamodel) as datamodels by coverage_state
-          ]]></query>
-        </search>
-        <option name="charting.chart">pie</option>
-        <option name="charting.legend.placement">bottom</option>
-        <option name="charting.chart.showPercent">1</option>
-        <option name="charting.chart.showLabels">1</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
-      </chart>
     </panel>
   </row>
 
@@ -485,70 +395,6 @@ $base_search$
     </panel>
   </row>
 
-
-  <row>
-    <panel>
-      <title>Framework Impact by Data Source</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Which governance frameworks are represented by the selected telemetry based on the configured capability and datamodel mappings.</p>
-              <p><strong>How to use it:</strong> Use this to identify which frameworks are most frequently touched by the selected Data Source population.</p>
-              <p><strong>Read it as:</strong> Higher bars indicate broader telemetry overlap with that governance driver. This is mapping evidence, not a compliance assertion.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_source_evidence">
-          <query><![CDATA[
-| where governance_mapped=1
-| stats dc(group_value) as source_values dc(datamodel) as datamodels dc(field_name) as matched_fields dc(capability) as capabilities by framework
-| sort - source_values - matched_fields framework
-          ]]></query>
-        </search>
-        <option name="charting.chart">column</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="charting.axisTitleX.text">Framework</option>
-        <option name="charting.axisTitleY.text">Number of Data Source values impacted</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
-      </chart>
-    </panel>
-
-    <panel>
-      <title>Mapped vs Unmapped Datamodels by Data Source</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> The split between datamodels that have governance mapping guidance configured and datamodels that currently do not.</p>
-              <p><strong>How to use it:</strong> Use this to separate mapped governance evidence from areas where the knowledge base or customer-specific policy input may need expansion.</p>
-              <p><strong>Read it as:</strong> Unmapped does not mean unimportant. It means DIG detected datamodel relevance but no governance framework mapping currently exists for that datamodel.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <chart>
-        <search base="base_governance_source_evidence">
-          <query><![CDATA[
-| stats dc(datamodel) as datamodels by group_value governance_mapped
-| eval mapping_state=if(governance_mapped=1,"Governance mapped","Unmapped")
-| rename group_value as "Data Source"
-| chart sum(datamodels) over "Data Source" by mapping_state
-          ]]></query>
-        </search>
-        <option name="charting.chart">column</option>
-        <option name="charting.chart.stackMode">stacked</option>
-        <option name="charting.legend.placement">bottom</option>
-        <option name="charting.axisTitleX.text">Selected Data Source</option>
-        <option name="charting.axisTitleY.text">Matched datamodel count</option>
-        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
-      </chart>
-    </panel>
-  </row>
 
   <row>
     <panel>

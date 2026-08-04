@@ -407,6 +407,52 @@ $base_search$
 
   <row>
     <panel>
+      <title>Framework Impact by Data Source</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Which governance frameworks are represented by the selected telemetry based on configured datamodel mappings.</p>
+              <p><strong>Why it matters:</strong> Shows which frameworks this Data Source population touches most broadly, beside the recommended-field completeness charts above.</p>
+              <p><strong>Read it as:</strong> Higher bars mean more distinct sources overlap that framework’s mappings. Mapping evidence only, not a compliance assertion.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_governance_field_evidence">
+          <query><![CDATA[
+| join type=inner max=0 datamodel [
+    | inputlookup governance_datamodel_mapping_lookup
+    | eval selected_framework=if(len("$framework_filter$")=0,"*","$framework_filter$")
+    | eval selected_framework_wrapped="|" . selected_framework . "|"
+    | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
+    | fields framework capability datamodel
+]
+| stats
+    dc(group_value) as source_values
+    dc(datamodel) as datamodels
+    dc(field_name) as matched_fields
+    dc(capability) as capabilities
+    by framework
+| sort - source_values - matched_fields framework
+          ]]></query>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Framework</option>
+        <option name="charting.axisTitleY.text">Number of Data Source values impacted</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
+        <drilldown>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Governance Mapping Detail</title>
       <html>
         <div class="context-toggle">
