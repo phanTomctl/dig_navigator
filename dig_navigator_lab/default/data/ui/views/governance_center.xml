@@ -405,7 +405,7 @@ $base_search$
 | sort - "Recommended %" Capability
           ]]></query>
         </search>
-        <option name="count">10</option>
+        <option name="count">5</option>
         <option name="wrap">true</option>
       </table>
     </panel>

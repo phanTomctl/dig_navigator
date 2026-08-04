@@ -455,13 +455,9 @@ $base_search$
     | where selected_framework="*" OR like(selected_framework_wrapped,"%|*|%") OR like(selected_framework_wrapped,"%|" . framework . "|%")
     | fields framework capability datamodel
 ]
-| stats
-    dc(group_value) as source_values
-    dc(datamodel) as datamodels
-    dc(field_name) as matched_fields
-    dc(capability) as capabilities
-    by framework
-| sort - source_values - matched_fields framework
+| stats dc(group_value) as source_values by framework
+| sort - source_values framework
+| table framework source_values
           ]]></query>
         </search>
         <option name="charting.chart">column</option>
