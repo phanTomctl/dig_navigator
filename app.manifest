@@ -36,9 +36,9 @@
       "uri": null
     },
     "releaseNotes": {
-      "name": "README",
-      "text": "README.md",
-      "uri": null
+      "name": "GitHub",
+      "text": null,
+      "uri": "https://github.com/phanTomctl/dig_navigator"
     }
   },
   "dependencies": null,
