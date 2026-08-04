@@ -205,7 +205,7 @@ $base_search$
     <panel>
       <html>
         <div class="devnull-hero">
-          <img class="devnull-logo" src="/static/app/dig_navigator_lab/devnull-logo.svg" />
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" />
           <div>
             <div class="devnull-title">Data Governance</div>
             <div class="devnull-subtitle">
@@ -257,7 +257,7 @@ $base_search$
         <option name="charting.axisTitleY.text">Framework</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#00e5ff,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -291,7 +291,7 @@ $base_search$
         <option name="charting.chart.showLabels">1</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#00e5ff,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=*&form.datamodel_filter=*&form.capability_filter=*&form.evidence_band_filter=$click.value|u$&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=*&form.datamodel_filter=*&form.capability_filter=*&form.evidence_band_filter=$click.value|u$&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -333,7 +333,7 @@ $base_search$
         </search>
         <option name="count">20</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </table>
     </panel>
@@ -424,7 +424,7 @@ $base_search$
         <option name="count">15</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.Source|u$&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.Source|u$&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
         </drilldown>
       </table>
     </panel>
@@ -466,7 +466,7 @@ $base_search$
         <option name="charting.axisTitleY.text">Number of Data Source values impacted</option>
         <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$click.value|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -524,7 +524,7 @@ $base_search$
         </search>
         <option name="count">5</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.grouping|u$&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$row.Datamodel|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=$row.grouping|u$&form.framework_filter=$row.Framework|u$&form.datamodel_filter=$row.Datamodel|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=*]]></link>
         </drilldown>
       </table>
     </panel>

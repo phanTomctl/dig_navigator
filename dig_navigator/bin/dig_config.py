@@ -12,7 +12,7 @@ import splunk.rest
 from splunk.rest import BaseRestHandler
 
 
-APP_NAME = "dig_navigator_lab"
+APP_NAME = "dig_navigator"
 
 DATAMODEL_FIELDS_COLLECTION = "datamodel_fields"
 CIM_DATAMODEL_TAGS_COLLECTION = "cim_datamodel_tags"

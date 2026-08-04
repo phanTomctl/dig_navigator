@@ -487,7 +487,7 @@ $base_search$
     <panel>
       <html>
         <div class="devnull-hero">
-          <img class="devnull-logo" src="/static/app/dig_navigator_lab/devnull-logo.svg" width="29.4" height="34" style="width:29.4px;height:34px;max-width:29.4px;max-height:34px;" />
+          <img class="devnull-logo" src="/static/app/dig_navigator/devnull-logo.svg" width="29.4" height="34" style="width:29.4px;height:34px;max-width:29.4px;max-height:34px;" />
           <div>
             <div class="devnull-title">Data Intelligence</div>
             <div class="devnull-subtitle">
@@ -539,7 +539,7 @@ $base_search$
         <option name="charting.chart.showLabels">1</option>
       
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/data_structure_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.classification=$click.value|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/data_structure_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.classification=$click.value|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
 </chart>
     </panel>
@@ -575,7 +575,7 @@ $base_search$
         <option name="charting.axisTitleY.text">Metric value</option>
       
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/data_structure_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$click.value|u$&form.classification=*&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/data_structure_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$click.value|u$&form.classification=*&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
 </chart>
     </panel>
@@ -641,7 +641,7 @@ $base_search$
           ]]></query>
         </search>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/telemetry_timeliness_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$row.Data Source|u$&form.selected_delay_category=*&form.selected_timestamp_indicator=*&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/telemetry_timeliness_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$row.Data Source|u$&form.selected_delay_category=*&form.selected_timestamp_indicator=*&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </table>
     </panel>
@@ -677,7 +677,7 @@ $base_search$
         <option name="charting.chart.showPercent">1</option>
         <option name="charting.chart.showLabels">1</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/telemetry_timeliness_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.selected_delay_category=*&form.selected_timestamp_indicator=$click.value|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/telemetry_timeliness_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.selected_delay_category=*&form.selected_timestamp_indicator=$click.value|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -811,7 +811,7 @@ $base_search$
         <option name="charting.axisLabelsX.majorLabelStyle.rotation">-45</option>
         <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.datamodel_filter=$click.value|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.datamodel_filter=$click.value|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -909,7 +909,7 @@ $base_search$
         </search>
         <option name="count">5</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$row.Data Source|u$&form.datamodel_filter=$row.Potential Datamodel|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$row.Data Source|u$&form.datamodel_filter=$row.Potential Datamodel|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </table>
     </panel>
@@ -968,7 +968,7 @@ $base_search$
         <option name="charting.axisTitleY.text">Field Count</option>
         <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$click.value|u$&form.datamodel_filter=*&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$click.value|u$&form.datamodel_filter=*&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -1008,7 +1008,7 @@ $base_search$
         <option name="charting.axisTitleY.text">Reduction %</option>
         <option name="charting.seriesColors">[#00e5ff,#ff4fd8,#ffc857,#7dff9a,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$click.value|u$&form.datamodel_filter=*&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=$click.value|u$&form.datamodel_filter=*&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </chart>
     </panel>
@@ -1107,7 +1107,7 @@ $base_search$
           ]]></query>
         </search>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.datamodel_filter=$row.datamodel|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator/datamodel_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.selected_group=*&form.datamodel_filter=$row.datamodel|u$&form.field_scope=$form.field_scope|u$&form.dm_perspective=$form.dm_perspective|u$&form.sample_limit=$sample_limit|u$]]></link>
         </drilldown>
       </table>
     </panel>

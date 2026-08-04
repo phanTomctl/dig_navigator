@@ -7,7 +7,7 @@ require([
     console.log("dig_config.js loaded");
 
     const endpoint = Splunk.util.make_url(
-        "/splunkd/__raw/servicesNS/nobody/dig_navigator_lab/dig_config"
+        "/splunkd/__raw/servicesNS/nobody/dig_navigator/dig_config"
     );
 
     function runAction(buttonId, statusId, action, runningText) {

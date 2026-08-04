@@ -9,7 +9,7 @@ import urllib.request
 import splunk.rest
 from splunk.rest import BaseRestHandler
 
-APP_NAME = "dig_navigator_lab"
+APP_NAME = "dig_navigator"
 COLLECTION = "dig_analysis_scope"
 MAX_SAMPLE_LIMIT = 100000
 

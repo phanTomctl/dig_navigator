@@ -254,7 +254,7 @@ require([
             return encodeURIComponent(key) + "=" + encodeURIComponent(params[key] == null ? "" : String(params[key]));
         }).join("&");
 
-        return makeAppUrl("/app/dig_navigator_lab/" + viewName + "?" + qs);
+        return makeAppUrl("/app/dig_navigator/" + viewName + "?" + qs);
     }
 
     function openTileDrilldown(tileId) {
