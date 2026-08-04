@@ -9,7 +9,7 @@
           <div>
             <div class="devnull-title">DIG Navigator</div>
             <div class="devnull-subtitle">
-              Data Intelligence &amp; Governance for Splunk data readiness, CIM alignment, onboarding opportunity, and operational value.
+              Data Intelligence and Governance for Splunk: understand what your data can support, where it is thin, and what to improve next.
             </div>
           </div>
         </div>
@@ -19,12 +19,18 @@
 
   <row>
     <panel>
-      <title>What DIG Helps You Understand</title>
+      <title>What DIG is</title>
       <html>
         <div class="context-panel">
-          <p><strong>DIG Navigator helps you understand the operational value and readiness of data in Splunk.</strong></p>
-          <p>Use DIG to review data structure, quality, field evidence, CIM tag context, datamodel readiness, governance alignment, telemetry timeliness, and onboarding opportunities.</p>
-          <p>DIG does not replace Splunk expertise or CIM validation tooling. It gives administrators, engineers, analysts, and governance stakeholders a shared evidence base for deciding what to improve next.</p>
+          <p><strong>DIG Navigator is an evidence app for Splunk data readiness.</strong> It helps you see how usable your telemetry is for operations, detection, investigation, and governance conversations.</p>
+          <p>DIG samples a scope you choose and shows potential evidence for:</p>
+          <ul>
+            <li><strong>Structure and quality</strong> of the events you are collecting</li>
+            <li><strong>CIM / datamodel readiness</strong> based on observed fields and tags</li>
+            <li><strong>Governance alignment</strong> as recommended-field completeness against mapped frameworks (potential evidence, not a compliance score)</li>
+            <li><strong>Delivery and timeliness</strong> of telemetry arriving into Splunk</li>
+          </ul>
+          <p>DIG does not replace Splunk expertise, formal audits, or control testing. It gives admins, engineers, analysts, and governance stakeholders a shared place to decide what to improve next.</p>
         </div>
       </html>
     </panel>
@@ -32,16 +38,61 @@
 
   <row>
     <panel>
-      <title>Recommended Workflow</title>
+      <title>How to use DIG</title>
       <html>
         <div class="context-panel">
+          <h4>First-time setup</h4>
           <ol>
-            <li><strong>First time run?</strong> Make sure to navigate to the Configuration page to create the necessary lookups that help to power this app.</li>
-            <li><strong>Start with Data Intelligence</strong> to identify data quality, structure, CIM alignment, and datamodel readiness concerns.</li>
-            <li><strong>Review Data Governance</strong> to understand freshness, timeliness, coverage, and governance alignment signals.</li>
-            <li><strong>Use DIG Intelligence Nexus (IN) dashboards</strong> to investigate the evidence behind executive-level findings.</li>
-            <li><strong>Act on the evidence</strong> by updating onboarding, field extractions, CIM tags, datamodel alignment, governance mappings, or telemetry timeliness rules where appropriate.</li>
+            <li>Open <strong>Configuration</strong> and create or refresh the lookups that power DIG (CIM field catalog, governance mapping, and related seed data).</li>
+            <li>Set an <strong>Analysis Scope</strong> (search, time range, group-by, sample limit) and click <strong>Apply Scope</strong> so DIG remembers it for you.</li>
           </ol>
+
+          <h4>Everyday workflow</h4>
+          <ol>
+            <li><strong>Data Intelligence</strong> (executive view): structure, quality, CIM alignment, and datamodel readiness for the scoped data.</li>
+            <li><strong>Data Governance</strong> (executive view): framework / control potential-evidence completeness and source footprint.</li>
+            <li><strong>DIG IN</strong> (investigation views): drill from an executive panel, or open an IN dashboard directly, to explain why a finding looks the way it does.</li>
+            <li><strong>Act on the evidence</strong>: improve extractions, CIM tags, onboarding, governance mappings, or timeliness rules as needed.</li>
+          </ol>
+
+          <h4>DIG IN dashboards</h4>
+          <ul>
+            <li><strong>Structure IN</strong>: data shape and classification detail</li>
+            <li><strong>Readiness IN</strong>: datamodel / CIM readiness investigation</li>
+            <li><strong>Governance IN</strong>: control, capability, and mapping explainability</li>
+            <li><strong>Quality IN</strong>: quality dimensions in more depth</li>
+            <li><strong>Delivery IN</strong>: ingest delay and timestamp integrity</li>
+          </ul>
+          <p>Executive dashboards answer “what should I look at?” IN dashboards answer “why, and what evidence supports that?”</p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Help with findings</title>
+      <html>
+        <div class="context-panel">
+          <p>If DIG surfaces issues but the remediation path is unclear, Dev/Null Security can help turn the evidence into a practical plan for Splunk onboarding, CIM alignment, governance design, telemetry readiness, and Enterprise Security enablement.</p>
+          <p class="dig-about-links">
+            <a href="https://devnullsecurity.co.uk/" target="_blank" rel="noopener noreferrer">Visit Dev/Null Security</a>
+            <a href="https://devnullsecurity.co.uk/White-Papers" target="_blank" rel="noopener noreferrer">White papers</a>
+            <a href="mailto:hello@devnullsecurity.co.uk">Email hello@devnullsecurity.co.uk</a>
+          </p>
+        </div>
+      </html>
+    </panel>
+
+    <panel>
+      <title>Feedback and issues</title>
+      <html>
+        <div class="context-panel">
+          <p>Found a bug, want a feature, or have feedback on DIG? Open an issue on the public GitHub repository so we can track and respond.</p>
+          <p class="dig-about-links">
+            <a class="dig-about-cta" href="https://github.com/phanTomctl/dig_navigator/issues" target="_blank" rel="noopener noreferrer">Open GitHub Issues</a>
+            <a href="https://github.com/phanTomctl/dig_navigator" target="_blank" rel="noopener noreferrer">View repository</a>
+          </p>
         </div>
       </html>
     </panel>
@@ -52,10 +103,8 @@
       <title>About Dev/Null Security</title>
       <html>
         <div class="context-panel">
-          <p>We are Dev/Null Security, a UK-based cyber security specialists focused on designing, building, and running security services that work.</p>
+          <p>Dev/Null Security is a UK-based cyber security practice focused on designing, building, and running security services that work.</p>
           <p>We help organisations improve visibility, strengthen defences, and operate with confidence across security architecture, engineering, governance, assurance, managed services, and operational improvement.</p>
-          <p>If DIG highlights issues but the remediation path is unclear, Dev/Null Security can help turn the findings into a practical improvement plan for Splunk onboarding, CIM alignment, governance design, telemetry readiness, and Enterprise Security enablement.</p>
-          <p><a href="https://devnullsecurity.co.uk/" target="_blank">Visit Dev/Null Security</a> · <a href="https://devnullsecurity.co.uk/White-Papers" target="_blank">Request Dev/Null white papers</a> · <a href="mailto:hello@devnullsecurity.co.uk">Contact Us</a></p>
         </div>
       </html>
     </panel>

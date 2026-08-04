@@ -192,6 +192,44 @@ body,
     margin-bottom: 6px;
 }
 
+.context-panel ol {
+    margin: 8px 0 12px 18px;
+    padding: 0;
+}
+
+.context-panel .dig-about-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    margin: 12px 0 0 0;
+    align-items: center;
+}
+
+.context-panel .dig-about-links a {
+    color: #7dff9a;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.context-panel .dig-about-links a:hover {
+    text-decoration: underline;
+}
+
+.context-panel a.dig-about-cta {
+    display: inline-block;
+    background: rgba(125, 255, 154, 0.14);
+    border: 1px solid rgba(125, 255, 154, 0.45);
+    color: #7dff9a;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-weight: 800;
+}
+
+.context-panel a.dig-about-cta:hover {
+    background: rgba(125, 255, 154, 0.22);
+    text-decoration: none;
+}
+
 /* Dashboard input layout only.
    Actual input controls intentionally use Splunk defaults. */
 
