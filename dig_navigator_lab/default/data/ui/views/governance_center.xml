@@ -319,7 +319,7 @@ $base_search$
           <div>
             <div class="devnull-title">Data Governance Information Nexus</div>
             <div class="devnull-subtitle">
-              Control-level recommended-field completeness, mapping explainability, and source evidence detail. Potential evidence only, not compliance.
+              Filtered investigation of control completeness, capability coverage, mapping explainability, and source guidance. Potential evidence only, not compliance.
             </div>
           </div>
         </div>
@@ -338,6 +338,66 @@ $base_search$
 
   <row>
     <panel>
+      <title>Filtered Control Band Mix</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Completeness-band mix for High-relevance primary controls after the current IN filters.</p>
+              <p><strong>Read it as:</strong> Investigation context for the selected framework, capability, source, and relevance filters. Not the executive framework gap chart.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_governance_primary_controls">
+          <query><![CDATA[
+| stats count as controls by evidence_band
+| eval band_order=case(evidence_band="Good Coverage",1,evidence_band="Partial Coverage",2,evidence_band="Low Coverage",3,evidence_band="No Coverage",4,true(),5)
+| sort band_order
+| fields - band_order
+          ]]></query>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.chart.showPercent">1</option>
+        <option name="charting.chart.showLabels">1</option>
+        <option name="charting.seriesColors">[#7dff9a,#ffc857,#00e5ff,#ff6b6b]</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Mapped Datamodel Observation</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Whether datamodels in the filtered mapping set were observed in the selected sources.</p>
+              <p><strong>Read it as:</strong> Covered = field evidence present; Missing = mapping exists but no matching fields in this sample. Use filters above to narrow.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_governance_center">
+          <query><![CDATA[
+| stats dc(datamodel) as datamodels by coverage_state
+| sort coverage_state
+          ]]></query>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.chart.showPercent">1</option>
+        <option name="charting.chart.showLabels">1</option>
+        <option name="charting.seriesColors">[#00e5ff,#ff6b6b]</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Primary Control Completeness Detail</title>
       <html>
         <div class="context-toggle">
@@ -345,7 +405,7 @@ $base_search$
             <summary>Why this matters</summary>
             <div class="context-panel">
               <p><strong>What this shows:</strong> Each High-relevance primary control with its mapped datamodel, recommended-field hit rate, and Good / Partial / Low / No Coverage band.</p>
-              <p><strong>Read it as:</strong> Use this to explain why a framework average is high or low. Potential evidence only.</p>
+              <p><strong>Read it as:</strong> Use this to explain why a filtered band mix is high or low. Potential evidence only.</p>
             </div>
           </details>
         </div>
@@ -359,12 +419,45 @@ $base_search$
 | sort Framework - "Recommended %" Control
           ]]></query>
         </search>
-        <option name="count">15</option>
+        <option name="count">12</option>
       </table>
     </panel>
   </row>
 
   <row>
+    <panel>
+      <title>Capability Coverage</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Weighted observed coverage by DIG capability for the filtered mapping set, with covered vs missing datamodels.</p>
+              <p><strong>Read it as:</strong> Capability lens for investigation. Separate from recommended-field control scores above.</p>
+            </div>
+          </details>
+        </div>
+      </html>
+      <chart>
+        <search base="base_governance_center">
+          <query><![CDATA[
+| stats
+    sum(mapping_weight) as possible_weight
+    sum(covered_weight) as covered_weight
+    by capability
+| eval capability_coverage_pct=round((covered_weight/possible_weight)*100,1)
+| sort - capability_coverage_pct capability
+| table capability capability_coverage_pct
+          ]]></query>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Weighted coverage %</option>
+        <option name="charting.axisTitleY.text">Capability</option>
+        <option name="charting.seriesColors">[#00e5ff]</option>
+      </chart>
+    </panel>
+
     <panel>
       <title>Capability Alignment Detail</title>
       <table>
@@ -374,19 +467,18 @@ $base_search$
     sum(mapping_weight) as possible_weight
     sum(covered_weight) as covered_weight
     dc(control_reference) as mapped_controls
-    values(framework) as frameworks
-    dc(datamodel) as mapped_datamodels
     values(eval(if(datamodel_observed=1,datamodel,null()))) as covered_datamodels
     values(eval(if(datamodel_observed=0,datamodel,null()))) as missing_datamodels
     by capability
 | eval capability_coverage_pct=round((covered_weight/possible_weight)*100,1)
 | eval status=case(capability_coverage_pct>=85,"Strong",capability_coverage_pct>=60,"Partial",capability_coverage_pct>0,"Limited",true(),"No observed coverage")
-| rename capability as Capability capability_coverage_pct as "Capability Coverage %" status as Status frameworks as Frameworks mapped_controls as "Mapped Controls" mapped_datamodels as "Mapped Datamodels" covered_datamodels as "Covered Datamodels" missing_datamodels as "Missing Datamodels"
-| table Capability "Capability Coverage %" Status Frameworks "Mapped Controls" "Mapped Datamodels" "Covered Datamodels" "Missing Datamodels"
-| sort - "Capability Coverage %" Capability
+| rename capability as Capability capability_coverage_pct as "Coverage %" status as Status mapped_controls as Controls covered_datamodels as Covered missing_datamodels as Missing
+| table Capability "Coverage %" Status Controls Covered Missing
+| sort - "Coverage %" Capability
           ]]></query>
         </search>
-        <option name="count">10</option>
+        <option name="count">8</option>
+        <option name="wrap">true</option>
       </table>
     </panel>
   </row>
@@ -399,8 +491,8 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> The full explainability chain from framework/control area to DIG capability, Splunk datamodel, observed evidence, confidence and rationale.</p>
-              <p><strong>How to use it:</strong> Use this table when someone asks how a framework coverage score was produced.</p>
+              <p><strong>What this shows:</strong> Explainability chain from framework/control to capability, datamodel, observed evidence, and rationale.</p>
+              <p><strong>How to use it:</strong> Answer how a control or capability score was produced for the current filters.</p>
             </div>
           </details>
         </div>
@@ -410,27 +502,27 @@ $base_search$
           <query><![CDATA[
 | eval evidence=if(datamodel_observed=1,"Observed","Not observed")
 | eval matched_fields=coalesce(matched_fields,0)
-| rename framework as Framework framework_version as Version control_reference as Control requirement_area as "Requirement Area" capability as Capability datamodel as Datamodel evidence as Evidence mapping_confidence as Confidence mapping_rationale as Rationale source_terms as "Source Terms" source_url as Source notes as Notes matched_fields as "Matched Fields"
-| table Framework Version Control "Requirement Area" Capability Datamodel Evidence Confidence "Matched Fields" Rationale "Source Terms" Source Notes
+| rename framework as Framework control_reference as Control capability as Capability datamodel as Datamodel evidence as Evidence mapping_confidence as Confidence mapping_rationale as Rationale matched_fields as "Matched Fields"
+| table Framework Control Capability Datamodel Evidence Confidence "Matched Fields" Rationale
 | sort Framework Control Capability Datamodel
           ]]></query>
         </search>
         <option name="count">10</option>
+        <option name="wrap">true</option>
       </table>
     </panel>
   </row>
 
-
   <row>
     <panel>
-      <title>Governance Assessment Summary</title>
+      <title>Source Governance Guidance</title>
       <html>
         <div class="context-toggle">
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> A plain-language summary of governance mapping coverage for each selected Data Source.</p>
-              <p><strong>How to use it:</strong> Use this as the first explanation when discussing governance evidence with admins, consultants, or stakeholders.</p>
+              <p><strong>What this shows:</strong> Per Data Source mapping coverage, relevance, mapped vs unmapped datamodels, and a short consultant talking point.</p>
+              <p><strong>Read it as:</strong> Merged assessment and recommendation view for the selected sources. Mapping evidence only, not compliance.</p>
             </div>
           </details>
         </div>
@@ -445,55 +537,12 @@ $base_search$
     dc(eval(if(governance_mapped=0,datamodel,null()))) as unmapped_datamodel_count
     values(framework) as frameworks
     values(capability) as capabilities
-    by group_value
-| eval mapping_coverage_pct=if(matched_datamodel_count>0,round((mapped_datamodel_count/matched_datamodel_count)*100,2),0)
-| eval brief=case(
-    mapped_datamodel_count=0, "CIM/datamodel relevance was detected, but no governance framework mapping is currently configured for the matched datamodels. Treat this as a governance mapping opportunity rather than a compliance gap.",
-    mapping_coverage_pct>=80, "Most detected datamodel relevance has governance framework mapping configured. This is a strong starting point for framework-evidence conversations.",
-    mapping_coverage_pct>=40, "Some detected datamodel relevance has governance framework mapping configured. Recommendations are useful, but unmapped areas should be reviewed before final decisions are made.",
-    true(), "Limited governance framework mapping is configured for the detected datamodel relevance. Use the evidence below to prioritise mapping expansion and customer policy discussion."
-)
-| eval frameworks=if(isnull(frameworks),"Unmapped",frameworks)
-| eval capabilities=if(isnull(capabilities),"Unmapped",capabilities)
-| rename group_value as "Data Source"
-| table "Data Source" matched_datamodel_count mapped_datamodel_count unmapped_datamodel_count mapping_coverage_pct frameworks capabilities brief
-| sort - mapping_coverage_pct "Data Source"
-          ]]></query>
-        </search>
-        <option name="count">5</option>
-      </table>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Governance Recommendations</title>
-      <html>
-        <div class="context-toggle">
-          <details>
-            <summary>Why this matters</summary>
-            <div class="context-panel">
-              <p><strong>What this shows:</strong> Data Source-level governance evidence, mapped frameworks, mapped capabilities and matched datamodels.</p>
-              <p><strong>How to use it:</strong> Use this to compare Data Source values and identify where guidance exists, where mapping is missing, and where further validation is needed.</p>
-              <p><strong>Read it as:</strong> This is not a compliance assertion. It is an evidence-based view of configured governance mapping and detected datamodel relevance.</p>
-            </div>
-          </details>
-        </div>
-      </html>
-      <table>
-        <search base="base_governance_source_evidence">
-          <query><![CDATA[
-| stats
-    dc(field_name) as matched_dm_fields
-    dc(datamodel) as matched_datamodel_count
-    values(framework) as frameworks
-    values(capability) as capabilities
-    values(datamodel) as datamodels
     values(eval(if(governance_mapped=1,datamodel,null()))) as governance_mapped_datamodels
     values(eval(if(governance_mapped=0,datamodel,null()))) as unmapped_datamodels
     values(governance_relevance) as relevance_values
     max(governance_mapped) as governance_mapped
     by group_value
+| eval mapping_coverage_pct=if(matched_datamodel_count>0,round((mapped_datamodel_count/matched_datamodel_count)*100,1),0)
 | eval frameworks=if(isnull(frameworks),"Unmapped",frameworks)
 | eval capabilities=if(isnull(capabilities),"Unmapped",capabilities)
 | eval high_relevance=if(mvfind(relevance_values,"High")>=0,1,0)
@@ -506,19 +555,21 @@ $base_search$
     medium_relevance=1, "Medium",
     true(), "Low"
 )
-| eval consultant_talking_point=case(
-    governance_relevance="High", "Lead with operational importance: this data appears highly relevant to security, audit or investigation outcomes. Validate ownership and use cases.",
-    governance_relevance="Medium-High", "Position as a strong candidate for governance review: evidence exists, but confirm business use.",
-    governance_relevance="Medium", "Use as a prioritisation discussion: decide whether this data supports enough use cases to justify further mapping or optimisation effort.",
-    governance_relevance="Unmapped", "Frame as a knowledge-base opportunity: DIG found datamodel relevance, but governance framework mapping needs to be configured or validated.",
-    true(), "Use as a review candidate: current evidence suggests limited governance relevance, but confirm against customer policy and business context."
+| eval guidance=case(
+    governance_mapped=0, "Mapping opportunity: CIM relevance found, but no governance framework mapping is configured for these datamodels.",
+    governance_relevance="High", "Lead with operational importance: highly relevant to security, audit or investigation outcomes. Validate ownership and use cases.",
+    governance_relevance="Medium-High", "Strong candidate for governance review: evidence exists, confirm business use.",
+    mapping_coverage_pct>=80, "Most detected datamodel relevance is mapped. Good starting point for framework-evidence conversations.",
+    mapping_coverage_pct>=40, "Partial mapping coverage. Review unmapped datamodels before final decisions.",
+    true(), "Limited mapping coverage. Prioritise mapping expansion and policy discussion."
 )
-| rename group_value as "Data Source"
-| table "Data Source" governance_relevance frameworks capabilities governance_mapped_datamodels unmapped_datamodels matched_dm_fields consultant_talking_point
-| sort governance_relevance - matched_dm_fields "Data Source"
+| rename group_value as "Data Source" mapping_coverage_pct as "Mapping %" governance_relevance as Relevance matched_dm_fields as "Matched fields" governance_mapped_datamodels as Mapped unmapped_datamodels as Unmapped
+| table "Data Source" Relevance "Mapping %" frameworks capabilities Mapped Unmapped "Matched fields" guidance
+| sort Relevance - "Mapping %" "Data Source"
           ]]></query>
         </search>
-        <option name="count">5</option>
+        <option name="count">8</option>
+        <option name="wrap">true</option>
       </table>
     </panel>
   </row>
@@ -531,9 +582,8 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> The datamodel-level evidence behind the recommendation, including mapped frameworks, capabilities and matched field counts.</p>
-              <p><strong>How to use it:</strong> Use this when a customer asks why a Data Source appears governance relevant.</p>
-              <p><strong>Read it as:</strong> Matched fields indicate evidence of datamodel relevance; governance mapping indicates whether DIG has framework/capability guidance configured for that datamodel.</p>
+              <p><strong>What this shows:</strong> Datamodel-level evidence for selected sources: mapping state, frameworks, capabilities, and matched field counts.</p>
+              <p><strong>Read it as:</strong> Why a source looks governance-relevant at the CIM model layer.</p>
             </div>
           </details>
         </div>
@@ -544,29 +594,37 @@ $base_search$
 | stats
     dc(field_name) as matched_fields
     values(framework) as frameworks
-    values(control_reference) as controls
-    values(requirement_area) as requirement_areas
     values(capability) as capabilities
     values(governance_relevance) as governance_relevance
-    values(mapping_confidence) as mapping_confidence
-    values(notes) as notes
     max(governance_mapped) as governance_mapped
     by group_value datamodel
 | eval mapping_state=if(governance_mapped=1,"Mapped","Unmapped")
 | eval frameworks=if(isnull(frameworks),"Unmapped",frameworks)
 | eval capabilities=if(isnull(capabilities),"Unmapped",capabilities)
-| rename group_value as "Data Source" datamodel as Datamodel
-| table "Data Source" Datamodel mapping_state frameworks controls requirement_areas capabilities matched_fields governance_relevance mapping_confidence notes
-| sort "Data Source" mapping_state - matched_fields Datamodel
+| rename group_value as "Data Source" datamodel as Datamodel matched_fields as Fields governance_relevance as Relevance
+| table "Data Source" Datamodel mapping_state frameworks capabilities Fields Relevance
+| sort "Data Source" mapping_state - Fields Datamodel
           ]]></query>
         </search>
-        <option name="count">5</option>
+        <option name="count">8</option>
       </table>
     </panel>
   </row>
+
   <row>
     <panel>
       <title>Matched Field Evidence</title>
+      <html>
+        <div class="context-toggle">
+          <details>
+            <summary>Why this matters</summary>
+            <div class="context-panel">
+              <p><strong>What this shows:</strong> Individual CIM fields driving observed datamodel evidence, with the frameworks and capabilities they support.</p>
+              <p><strong>Read it as:</strong> Forensic field list for mapping validation. Prefer filtering by source or datamodel first.</p>
+            </div>
+          </details>
+        </div>
+      </html>
       <table>
         <search base="base_governance_center">
           <query><![CDATA[
@@ -578,10 +636,10 @@ $base_search$
 | rename field_name as Field source_type_count as "Data Source Count"
 | table Field "Data Source Count" Datamodels Capabilities Frameworks "Data Source values"
 | sort - "Data Source Count" Field
-| head 250
+| head 100
           ]]></query>
         </search>
-        <option name="count">5</option>
+        <option name="count">8</option>
       </table>
     </panel>
   </row>
