@@ -244,7 +244,7 @@ $base_search$
     | eval selected_dm_wrapped="|" . selected_dm . "|"
     | eval datamodel=replace(datamodel," ","_")
     | where selected_dm="*" OR like(selected_dm_wrapped,"%|*|%") OR like(selected_dm_wrapped,"%|" . datamodel . "|%")
-    | where match(lower(governance_relevance),"^high")
+    | where governance_relevance="High"
     | where datamodel!="Ticket_Management"
     | eval map_row=1
     | fields framework framework_version control_reference capability datamodel map_row
@@ -265,9 +265,10 @@ $base_search$
     by framework framework_version control_reference
 | where isnotnull(control_coverage_pct)
 | eval evidence_band=case(
-    control_coverage_pct>=70, "Good",
-    control_coverage_pct>0, "Partial",
-    true(), "None"
+    control_coverage_pct>=70, "Good Coverage",
+    control_coverage_pct>=40, "Partial Coverage",
+    control_coverage_pct>0, "Low Coverage",
+    true(), "No Coverage"
 )
 | fields framework framework_version control_reference capability primary_datamodel observed_recommended total_recommended control_coverage_pct evidence_band
     ]]></query>
@@ -319,7 +320,7 @@ $base_search$
             <summary>Why this matters</summary>
             <div class="context-panel">
               <p><strong>What this shows:</strong> Average % of recommended CIM fields present for High-relevance (primary) controls in each framework.</p>
-              <p><strong>Why it matters:</strong> Complements the executive Good/Partial/None gap chart with a single completeness number per framework.</p>
+              <p><strong>Why it matters:</strong> Complements the executive Good / Partial / Low / No Coverage gap chart with a single completeness number per framework.</p>
               <p><strong>Read it as:</strong> If a control maps to Authentication, the score is how many of Authentication’s recommended fields appear in this sample. Ticket_Management is excluded for now. Not a compliance score.</p>
             </div>
           </details>
@@ -349,7 +350,7 @@ $base_search$
           <details>
             <summary>Why this matters</summary>
             <div class="context-panel">
-              <p><strong>What this shows:</strong> Each High-relevance primary control with its mapped datamodel, recommended-field hit rate, and Good/Partial/None band.</p>
+              <p><strong>What this shows:</strong> Each High-relevance primary control with its mapped datamodel, recommended-field hit rate, and Good / Partial / Low / No Coverage band.</p>
               <p><strong>Read it as:</strong> Use this to explain why a framework average is high or low. Potential evidence only.</p>
             </div>
           </details>
