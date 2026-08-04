@@ -291,7 +291,7 @@ $base_search$
         <option name="charting.chart.showLabels">1</option>
         <option name="charting.seriesColors">[#7dff9a,#ffc857,#00e5ff,#ff6b6b]</option>
         <drilldown>
-          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=$form.framework_filter|u$&form.datamodel_filter=$form.datamodel_filter|u$&form.capability_filter=*&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
+          <link target="_blank"><![CDATA[/app/dig_navigator_lab/governance_center?form.base_search=$base_search|u$&form.time_range.earliest=$time_range.earliest|u$&form.time_range.latest=$time_range.latest|u$&form.group_by=$group_by|u$&form.sample_limit=$sample_limit|u$&form.selected_group=*&form.framework_filter=*&form.datamodel_filter=*&form.capability_filter=*&form.evidence_band_filter=$click.value|u$&form.coverage_filter=*&form.governance_relevance_filter=High]]></link>
         </drilldown>
       </chart>
     </panel>

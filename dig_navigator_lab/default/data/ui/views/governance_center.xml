@@ -92,6 +92,16 @@ $base_search$
       <delimiter>|</delimiter>
     </input>
 
+    <input type="dropdown" token="evidence_band_filter" searchWhenChanged="true">
+      <label>Evidence band</label>
+      <choice value="*">All</choice>
+      <choice value="Good Coverage">Good Coverage</choice>
+      <choice value="Partial Coverage">Partial Coverage</choice>
+      <choice value="Low Coverage">Low Coverage</choice>
+      <choice value="No Coverage">No Coverage</choice>
+      <default>*</default>
+    </input>
+
     <input type="dropdown" token="coverage_filter" searchWhenChanged="true">
       <label>Coverage status</label>
       <choice value="*">All</choice>
@@ -270,6 +280,9 @@ $base_search$
     control_coverage_pct>0, "Low Coverage",
     true(), "No Coverage"
 )
+| eval selected_band=if(len("$evidence_band_filter$")=0,"*","$evidence_band_filter$")
+| eval selected_band_wrapped="|" . selected_band . "|"
+| where selected_band="*" OR like(selected_band_wrapped,"%|*|%") OR like(selected_band_wrapped,"%|" . evidence_band . "|%")
 | fields framework framework_version control_reference capability primary_datamodel observed_recommended total_recommended control_coverage_pct evidence_band
     ]]></query>
   </search>

@@ -172,6 +172,7 @@ require([
             ["form.datamodel_filter", "datamodel_filter"],
             ["form.capability_filter", "capability_filter"],
             ["form.coverage_filter", "coverage_filter"],
+            ["form.evidence_band_filter", "evidence_band_filter"],
             ["form.governance_relevance_filter", "governance_relevance_filter"],
             ["form.tier_filter", "tier_filter"],
             ["form.retention_filter", "retention_filter"],
