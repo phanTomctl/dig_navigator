@@ -781,6 +781,116 @@ def get_request_value(request, key):
     return None
 
 
+def kvstore_has_records(session_key, collection_name):
+    """Return True when the named KV collection has at least one record."""
+    uri = (
+        f"/servicesNS/nobody/{APP_NAME}"
+        f"/storage/collections/data/{collection_name}"
+        f"?output_mode=json&limit=1"
+    )
+    try:
+        records = splunkd_json_request(
+            session_key=session_key,
+            uri=uri,
+            method="GET",
+        )
+    except Exception:
+        return False
+
+    return isinstance(records, list) and len(records) > 0
+
+
+def set_app_is_configured(session_key, configured=True):
+    """
+    Persist [install] is_configured in local/app.conf and reload the app.
+
+    Splunk uses this flag with setup_view to force Configuration until setup completes.
+    """
+    value = "1" if configured else "0"
+    errors = []
+
+    # Ensure the [install] stanza exists in local app.conf, then set the key.
+    try:
+        splunkd_json_request(
+            session_key=session_key,
+            uri=f"/servicesNS/nobody/{APP_NAME}/properties/app?output_mode=json",
+            method="POST",
+            form={"__stanza": "install"},
+        )
+    except Exception as e:
+        # Stanza may already exist; continue and try the property update.
+        errors.append({"step": "ensure_install_stanza", "error": str(e)})
+
+    try:
+        splunkd_json_request(
+            session_key=session_key,
+            uri=(
+                f"/servicesNS/nobody/{APP_NAME}"
+                f"/properties/app/install/is_configured?output_mode=json"
+            ),
+            method="POST",
+            form={"value": value},
+        )
+    except Exception as e:
+        # Fallback used by many apps / older endpoints.
+        try:
+            splunkd_json_request(
+                session_key=session_key,
+                uri=f"/servicesNS/nobody/{APP_NAME}/properties/app/install?output_mode=json",
+                method="POST",
+                form={"is_configured": value},
+            )
+        except Exception as e2:
+            return {
+                "ok": False,
+                "is_configured": value,
+                "errors": errors + [
+                    {"step": "set_is_configured", "error": str(e)},
+                    {"step": "set_is_configured_fallback", "error": str(e2)},
+                ],
+            }
+
+    try:
+        splunkd_json_request(
+            session_key=session_key,
+            uri=f"/servicesNS/nobody/{APP_NAME}/apps/local/{APP_NAME}/_reload",
+            method="POST",
+            form={},
+        )
+    except Exception as e:
+        errors.append({"step": "reload_app", "error": str(e)})
+
+    return {
+        "ok": True,
+        "is_configured": value,
+        "errors": errors,
+    }
+
+
+def maybe_mark_app_configured(session_key):
+    """
+    Mark the app configured once both CIM field and tag lookups have data.
+    """
+    fields_ready = kvstore_has_records(session_key, DATAMODEL_FIELDS_COLLECTION)
+    tags_ready = kvstore_has_records(session_key, CIM_DATAMODEL_TAGS_COLLECTION)
+
+    if not (fields_ready and tags_ready):
+        return {
+            "app_configured": False,
+            "fields_ready": fields_ready,
+            "tags_ready": tags_ready,
+            "detail": "Both datamodel field and tag lookups must contain records before setup is complete.",
+        }
+
+    configure_result = set_app_is_configured(session_key, configured=True)
+    return {
+        "app_configured": bool(configure_result.get("ok")),
+        "fields_ready": fields_ready,
+        "tags_ready": tags_ready,
+        "configure_result": configure_result,
+    }
+
+
 class DIGConfig(BaseRestHandler):
 
     def handle_GET(self):
@@ -823,6 +933,7 @@ class DIGConfig(BaseRestHandler):
                 result = build_datamodel_fields_from_cim(self.sessionKey)
 
             result["action"] = action
+            result["setup"] = maybe_mark_app_configured(self.sessionKey)
             self.response.write(json.dumps(result))
 
         except Exception as e:

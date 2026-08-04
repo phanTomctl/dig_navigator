@@ -27,6 +27,10 @@ require([
             dataType: "json",
             success: function(data) {
                 status.text("Success: " + JSON.stringify(data));
+                // After Splunk marks is_configured=1, leave setup and open the app home.
+                if (data && data.setup && data.setup.app_configured) {
+                    window.location.href = Splunk.util.make_url("/app/dig_navigator/data_intelligence");
+                }
             },
             error: function(xhr) {
                 status.text("Error " + xhr.status + ": " + xhr.responseText);
